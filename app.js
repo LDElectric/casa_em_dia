@@ -4,6 +4,15 @@ const config = window.SUPABASE_CONFIG;
 const authScreen = document.getElementById('auth-screen');
 const setupScreen = document.getElementById('household-setup');
 const appShell = document.getElementById('app-shell');
+const initialAuthCallback = (() => {
+  const query = new URLSearchParams(window.location.search);
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  return query.has('code')
+    || query.has('token_hash')
+    || ['invite', 'recovery'].includes(query.get('type'))
+    || ['invite', 'recovery'].includes(hash.get('type'))
+    || hash.has('access_token');
+})();
 const state = {
   user: null,
   membership: null,
@@ -20,6 +29,7 @@ const state = {
   pendingHouseholdImport: null,
   editingFinanceCategoryId: null,
   editingBudgetTargetId: null,
+  authCallbackPending: initialAuthCallback,
   passwordSetupPending: false,
   completingPasswordSetup: false,
   insightsMonthIndex: 5
@@ -201,6 +211,7 @@ if (!config?.url || !config?.publishableKey) {
     }
     document.getElementById('password-setup-form').reset();
     state.passwordSetupPending = false;
+    state.authCallbackPending = false;
     const cleanUrl = new URL(window.location.href);
     cleanUrl.search = '';
     cleanUrl.hash = '';
@@ -220,23 +231,28 @@ if (!config?.url || !config?.publishableKey) {
     const search = new URLSearchParams(window.location.search);
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     return state.passwordSetupPending
+      || state.authCallbackPending
       || search.get('mode') === 'set-password'
       || ['invite', 'recovery'].includes(hash.get('type'));
   }
 
   async function handleSession(session) {
     if (!session?.user) {
+      const invalidAuthCallback = state.authCallbackPending;
       state.user = null;
       state.membership = null;
       state.members = [];
       state.pendingHouseholdImport = null;
       state.passwordSetupPending = false;
+      state.authCallbackPending = false;
       authScreen.hidden = false;
       setupScreen.hidden = true;
       appShell.inert = true;
       document.getElementById('auth-login-card').hidden = false;
       document.getElementById('auth-password-card').hidden = true;
-      setMessage('auth-message', '');
+      setMessage('auth-message', invalidAuthCallback
+        ? 'O convite não pôde ser validado. Abra o link mais recente do e-mail ou solicite um novo link de criação de senha.'
+        : '');
       return;
     }
 
