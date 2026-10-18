@@ -29,6 +29,7 @@ const state = {
   pendingHouseholdImport: null,
   editingFinanceCategoryId: null,
   editingBudgetTargetId: null,
+  authLinkFlow: null,
   authCallbackPending: initialAuthCallback,
   passwordSetupPending: false,
   completingPasswordSetup: false,
@@ -82,8 +83,12 @@ if (!config?.url || !config?.publishableKey) {
 
   async function startApp() {
     document.getElementById('auth-form').addEventListener('submit', signInWithPassword);
-    document.getElementById('request-password-reset').addEventListener('click', requestPasswordReset);
+    document.getElementById('request-first-access').addEventListener('click', () => showAuthLinkRequest('first-access'));
+    document.getElementById('request-password-reset').addEventListener('click', () => showAuthLinkRequest('reset-password'));
+    document.getElementById('auth-link-form').addEventListener('submit', requestPasswordSetupLink);
+    document.getElementById('back-to-login').addEventListener('click', showLoginCard);
     document.getElementById('password-setup-form').addEventListener('submit', setAccountPassword);
+    document.getElementById('password-setup-back').addEventListener('click', cancelPasswordSetup);
     document.getElementById('household-form').addEventListener('submit', createHousehold);
     document.getElementById('invite-form').addEventListener('submit', inviteMember);
     document.getElementById('save-transaction').addEventListener('click', saveEntry);
@@ -149,29 +154,72 @@ if (!config?.url || !config?.publishableKey) {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       console.error('Could not sign in with password:', error.message);
-      setMessage('auth-message', 'E-mail ou senha inválidos. No primeiro acesso, use a opção para criar/redefinir a senha.');
+      setMessage('auth-message', 'E-mail ou senha inválidos. Se recebeu um convite, escolha “Primeiro acesso”.');
       return;
     }
     document.getElementById('auth-password').value = '';
   }
 
-  async function requestPasswordReset() {
-    const email = document.getElementById('auth-email').value.trim().toLowerCase();
+  function showAuthLinkRequest(flow) {
+    state.authLinkFlow = flow;
+    document.getElementById('auth-login-card').hidden = true;
+    document.getElementById('auth-link-card').hidden = false;
+    document.getElementById('auth-password-card').hidden = true;
+    document.getElementById('auth-link-title').textContent = flow === 'first-access'
+      ? 'Ative seu convite'
+      : 'Redefina sua senha';
+    document.getElementById('auth-link-description').textContent = flow === 'first-access'
+      ? 'Informe o e-mail que recebeu o convite. Enviaremos um link para você definir sua senha e ativar o acesso.'
+      : 'Informe o e-mail da sua conta. Enviaremos um link seguro para criar uma nova senha.';
+    document.getElementById('send-auth-link').textContent = flow === 'first-access'
+      ? 'Enviar link de ativação'
+      : 'Enviar link de redefinição';
+    document.getElementById('auth-link-email').value =
+      document.getElementById('auth-email').value.trim().toLowerCase();
+    setMessage('auth-link-message', '');
+    document.getElementById('auth-link-email').focus();
+  }
+
+  function showLoginCard() {
+    state.authLinkFlow = null;
+    document.getElementById('auth-login-card').hidden = false;
+    document.getElementById('auth-link-card').hidden = true;
+    document.getElementById('auth-password-card').hidden = true;
+    const email = document.getElementById('auth-link-email').value.trim().toLowerCase();
+    if (email) document.getElementById('auth-email').value = email;
+    document.getElementById('auth-password').focus();
+  }
+
+  async function requestPasswordSetupLink(event) {
+    event.preventDefault();
+    const email = document.getElementById('auth-link-email').value.trim().toLowerCase();
     if (!email) {
-      setMessage('auth-message', 'Informe o e-mail da conta para receber o link de criação/redefinição de senha.');
-      document.getElementById('auth-email').focus();
+      setMessage('auth-link-message', 'Informe o e-mail da conta.');
+      document.getElementById('auth-link-email').focus();
       return;
     }
-    setMessage('auth-message', 'Solicitando o link...');
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: passwordSetupUrl()
-    });
-    if (error) {
-      console.error('Could not request password reset:', error.message);
-      setMessage('auth-message', passwordResetErrorMessage(error));
-      return;
+    const flow = state.authLinkFlow ?? 'reset-password';
+    const button = document.getElementById('send-auth-link');
+    button.disabled = true;
+    setMessage('auth-link-message', 'Solicitando o link...');
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: passwordSetupUrl(flow)
+      });
+      if (error) {
+        console.error('Could not request password setup link:', error.message);
+        setMessage('auth-link-message', passwordResetErrorMessage(error));
+        return;
+      }
+      setMessage('auth-link-message', flow === 'first-access'
+        ? 'Se este e-mail já foi convidado, enviaremos o link de ativação. Confira sua caixa de entrada e o spam.'
+        : 'Se este e-mail estiver cadastrado, enviaremos o link de redefinição. Confira sua caixa de entrada e o spam.');
+    } catch (error) {
+      console.error('Could not request password setup link:', error);
+      setMessage('auth-link-message', 'Não foi possível conectar ao serviço de e-mail. Confira sua conexão e tente novamente.');
+    } finally {
+      button.disabled = false;
     }
-    setMessage('auth-message', 'Se a conta existir, enviaremos um link para criar ou redefinir a senha.');
   }
 
   function passwordResetErrorMessage(error) {
@@ -219,12 +267,24 @@ if (!config?.url || !config?.publishableKey) {
     await handleSession({ user: data.user });
   }
 
-  function passwordSetupUrl() {
+  function passwordSetupUrl(flow) {
     const url = new URL(window.location.href);
     url.search = '';
     url.hash = '';
-    url.searchParams.set('mode', 'set-password');
+    url.searchParams.set('mode', flow);
     return url.toString();
+  }
+
+  function passwordSetupMode() {
+    const search = new URLSearchParams(window.location.search);
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const mode = search.get('mode');
+    if (mode === 'first-access' || mode === 'invite' || mode === 'reset-password') return mode;
+    if (mode === 'set-password') return 'invite';
+    if (search.get('type') === 'recovery' || hash.get('type') === 'recovery') return 'reset-password';
+    if (search.get('type') === 'invite' || hash.get('type') === 'invite') return 'invite';
+    if (initialAuthCallback) return 'invite';
+    return 'reset-password';
   }
 
   function isPasswordSetupFlow() {
@@ -232,8 +292,38 @@ if (!config?.url || !config?.publishableKey) {
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     return state.passwordSetupPending
       || state.authCallbackPending
-      || search.get('mode') === 'set-password'
+      || ['first-access', 'invite', 'reset-password', 'set-password'].includes(search.get('mode'))
       || ['invite', 'recovery'].includes(hash.get('type'));
+  }
+
+  function renderPasswordSetupCopy() {
+    const mode = passwordSetupMode();
+    const isFirstAccess = mode === 'first-access' || mode === 'invite';
+    document.getElementById('password-setup-title').textContent = isFirstAccess
+      ? 'Ative seu acesso'
+      : 'Redefina sua senha';
+    document.getElementById('password-setup-description').textContent = isFirstAccess
+      ? 'Seu convite foi validado. Crie uma senha exclusiva para concluir o primeiro acesso à casa.'
+      : 'Crie uma nova senha exclusiva para proteger sua conta.';
+  }
+
+  async function cancelPasswordSetup() {
+    const previousFlow = state.authLinkFlow;
+    state.authLinkFlow = null;
+    state.passwordSetupPending = false;
+    state.authCallbackPending = false;
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      state.authLinkFlow = previousFlow;
+      console.error('Could not cancel password setup:', error.message);
+      setMessage('password-setup-message', 'Não foi possível voltar ao login. Recarregue a página.');
+      return;
+    }
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.search = '';
+    cleanUrl.hash = '';
+    window.history.replaceState({}, document.title, cleanUrl.toString());
+    showLoginCard();
   }
 
   async function handleSession(session) {
@@ -248,8 +338,15 @@ if (!config?.url || !config?.publishableKey) {
       authScreen.hidden = false;
       setupScreen.hidden = true;
       appShell.inert = true;
-      document.getElementById('auth-login-card').hidden = false;
-      document.getElementById('auth-password-card').hidden = true;
+      if (state.authLinkFlow) {
+        document.getElementById('auth-login-card').hidden = true;
+        document.getElementById('auth-link-card').hidden = false;
+        document.getElementById('auth-password-card').hidden = true;
+      } else {
+        document.getElementById('auth-login-card').hidden = false;
+        document.getElementById('auth-link-card').hidden = true;
+        document.getElementById('auth-password-card').hidden = true;
+      }
       setMessage('auth-message', invalidAuthCallback
         ? 'O convite não pôde ser validado. Abra o link mais recente do e-mail ou solicite um novo link de criação de senha.'
         : '');
@@ -262,11 +359,14 @@ if (!config?.url || !config?.publishableKey) {
     appShell.inert = true;
     if (isPasswordSetupFlow()) {
       document.getElementById('auth-login-card').hidden = true;
+      document.getElementById('auth-link-card').hidden = true;
       document.getElementById('auth-password-card').hidden = false;
+      renderPasswordSetupCopy();
       document.getElementById('new-password').focus();
       return;
     }
     document.getElementById('auth-login-card').hidden = false;
+    document.getElementById('auth-link-card').hidden = true;
     document.getElementById('auth-password-card').hidden = true;
     setMessage('auth-message', 'Verificando o acesso à casa...');
     const { data: membership, error } = await supabase

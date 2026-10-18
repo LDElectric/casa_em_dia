@@ -502,12 +502,24 @@
         <input class="form-input" id="auth-password" type="password" autocomplete="current-password" required maxlength="128" />
         <button class="primary-btn" type="submit">Entrar</button>
       </form>
-      <button class="secondary-btn" type="button" id="request-password-reset">Criar senha do convite / esqueci minha senha</button>
+      <button class="secondary-btn" type="button" id="request-first-access">Primeiro acesso: já recebi um convite</button>
+      <button class="secondary-btn" type="button" id="request-password-reset">Esqueci minha senha</button>
       <p class="auth-message" id="auth-message" role="status" aria-live="polite"></p>
+    </section>
+    <section class="auth-card" id="auth-link-card" role="dialog" aria-modal="true" aria-labelledby="auth-link-title" hidden>
+      <h1 id="auth-link-title">Receber link seguro</h1>
+      <p id="auth-link-description"></p>
+      <form id="auth-link-form">
+        <label class="form-label" for="auth-link-email">E-mail da conta</label>
+        <input class="form-input" id="auth-link-email" type="email" autocomplete="email" required maxlength="254" />
+        <button class="primary-btn" id="send-auth-link" type="submit">Enviar link</button>
+      </form>
+      <button class="secondary-btn" type="button" id="back-to-login">Voltar ao login</button>
+      <p class="auth-message" id="auth-link-message" role="status" aria-live="polite"></p>
     </section>
     <section class="auth-card" id="auth-password-card" role="dialog" aria-modal="true" aria-labelledby="password-setup-title" hidden>
       <h1 id="password-setup-title">Defina sua senha</h1>
-      <p>Use uma senha exclusiva com pelo menos 12 caracteres. Não compartilhe sua senha com o responsável da casa.</p>
+      <p id="password-setup-description">Use uma senha exclusiva com pelo menos 12 caracteres. Não compartilhe sua senha com o responsável da casa.</p>
       <form id="password-setup-form">
         <label class="form-label" for="new-password">Nova senha</label>
         <input class="form-input" id="new-password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
@@ -515,6 +527,7 @@
         <input class="form-input" id="confirm-new-password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
         <button class="primary-btn" type="submit">Salvar senha e continuar</button>
       </form>
+      <button class="secondary-btn" type="button" id="password-setup-back">Voltar ao login</button>
       <p class="auth-message" id="password-setup-message" role="status" aria-live="polite"></p>
     </section>
   </div>

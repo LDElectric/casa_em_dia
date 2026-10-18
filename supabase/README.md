@@ -32,6 +32,8 @@ As variáveis `SUPABASE_URL`, `SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY` 
 
 Configure o envio de e-mails em **Authentication → SMTP Settings** antes de convidar outras pessoas. O responsável pode convidar e remover membros em **Ajustes**. Somente a função de servidor valida o papel `owner` e usa a chave `service_role`; o responsável informa apenas o e-mail. A pessoa convidada cria a própria senha pelo link recebido. Contas existentes podem usar **Esqueci ou preciso criar minha senha** na tela de login. A opção de redefinição não cria uma conta nem concede acesso a uma casa.
 
+Na tela de entrada, **“Primeiro acesso: já recebi um convite”** solicita um link para ativar uma conta já convidada; **“Esqueci minha senha”** solicita uma redefinição. Os dois caminhos levam a uma tela de envio distinta e, depois, a uma tela de senha com título específico para ativação ou redefinição. Nenhum deles cria usuários; novos membros continuam sendo adicionados pelo responsável.
+
 ## 4. Publicar e instalar o PWA
 
 Sirva a aplicação por HTTPS em hospedagem estática (ou por `localhost` durante o desenvolvimento). O acesso por `file://` não permite service workers e não serve para testar a instalação/offline. A URL e a chave **publishable** em `supabase-config.js` são informações públicas do cliente; a proteção dos dados vem das políticas RLS da migração.
