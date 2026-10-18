@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Casa em Dia</title>
+</head>
+<body>
+  <p>Abrindo <a href="./casa-em-dia-prototype.html">Casa em Dia</a>...</p>
+  <script>
+    const appUrl = new URL('./casa-em-dia-prototype.html', window.location.href);
+    appUrl.search = window.location.search;
+    appUrl.hash = window.location.hash;
+    window.location.replace(appUrl.href);
+  </script>
+</body>
+</html>
