@@ -17,7 +17,7 @@ O projeto não depende de Workers pagos nem publica arquivos privados do banco. 
 
 ## Alternativa: GitHub Pages
 
-O workflow `.github/workflows/deploy-github-pages.yml` constrói e publica automaticamente a pasta `dist/` após pushes em `main`. No GitHub, abra **Settings → Pages** e escolha **GitHub Actions** como origem da publicação. A URL será `https://ldelectric.github.io/casa_em_dia/`.
+O workflow `.github/workflows/deploy-github-pages.yml` pode ser executado manualmente após habilitar o Pages. No GitHub, abra **Settings → Pages** e escolha **GitHub Actions** como origem da publicação; depois, em **Actions**, execute **Deploy PWA to GitHub Pages**. A URL será `https://ldelectric.github.io/casa_em_dia/`.
 
 Se usar a URL padrão do GitHub Pages, autorize-a também nas URLs de redirecionamento do Supabase. A URL `APP_SITE_URL` usada pela função de convites precisa conter o caminho do projeto: `https://ldelectric.github.io/casa_em_dia/`. Para Cloudflare Pages, use o endereço HTTPS do projeto Pages com a barra final.
 
