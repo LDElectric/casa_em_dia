@@ -24,10 +24,11 @@ Deno.serve(async (request: Request) => {
     console.error("APP_SITE_URL is not a valid URL.");
     return jsonResponse({ error: "A URL do app não está configurada corretamente." }, 500, preflightHeaders);
   }
-  const inviteRedirectUrl = new URL(
+  const inviteRedirect = new URL(
     "casa-em-dia-prototype.html",
     appSiteUrl.endsWith("/") ? appSiteUrl : `${appSiteUrl}/`
-  ).toString();
+  );
+  inviteRedirect.searchParams.set("mode", "set-password");
   if (requestOrigin && requestOrigin !== appOrigin) {
     return new Response(JSON.stringify({ error: "Origem não permitida." }), { status: 403 });
   }
@@ -111,7 +112,7 @@ Deno.serve(async (request: Request) => {
 
   const { data: invited, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(
     email,
-    { redirectTo: inviteRedirectUrl }
+    { redirectTo: inviteRedirect.toString() }
   );
   if (inviteError || !invited.user) {
     console.error("Supabase Auth invitation failed:", inviteError?.message ?? "No invited user.");

@@ -7,6 +7,7 @@
     "pages:deploy": "npm run build && wrangler pages deploy dist --project-name=casa-em-dia"
   },
   "devDependencies": {
+    "supabase": "^2.121.0",
     "wrangler": "^4.151.1"
   }
 }

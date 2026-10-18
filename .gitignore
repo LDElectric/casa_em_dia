@@ -2,6 +2,10 @@ supabase.txt
 .env
 .env.*
 !.env.example
+*.xlsx
+*.csv
+/analysis_receitas_custos.ipynb
+/household-initial-import.json
 /node_modules/
 /dist/
 /.wrangler/

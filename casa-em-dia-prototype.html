@@ -492,15 +492,30 @@
 </head>
 <body>
   <div class="auth-screen" id="auth-screen">
-    <section class="auth-card" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+    <section class="auth-card" id="auth-login-card" role="dialog" aria-modal="true" aria-labelledby="auth-title">
       <h1 id="auth-title">Casa em Dia</h1>
-      <p>Acesse com o e-mail que recebeu o convite da casa. Enviaremos um link seguro para entrar.</p>
+      <p>Entre com o e-mail convidado e sua senha. Novas contas só podem ser adicionadas pelo responsável da casa.</p>
       <form id="auth-form">
         <label class="form-label" for="auth-email">E-mail</label>
         <input class="form-input" id="auth-email" type="email" autocomplete="email" required maxlength="254" />
-        <button class="primary-btn" type="submit">Enviar link de acesso</button>
+        <label class="form-label" for="auth-password">Senha</label>
+        <input class="form-input" id="auth-password" type="password" autocomplete="current-password" required maxlength="128" />
+        <button class="primary-btn" type="submit">Entrar</button>
       </form>
+      <button class="secondary-btn" type="button" id="request-password-reset">Esqueci ou preciso criar minha senha</button>
       <p class="auth-message" id="auth-message" role="status" aria-live="polite"></p>
+    </section>
+    <section class="auth-card" id="auth-password-card" role="dialog" aria-modal="true" aria-labelledby="password-setup-title" hidden>
+      <h1 id="password-setup-title">Defina sua senha</h1>
+      <p>Use uma senha exclusiva com pelo menos 12 caracteres. Não compartilhe sua senha com o responsável da casa.</p>
+      <form id="password-setup-form">
+        <label class="form-label" for="new-password">Nova senha</label>
+        <input class="form-input" id="new-password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+        <label class="form-label" for="confirm-new-password">Confirme a nova senha</label>
+        <input class="form-input" id="confirm-new-password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required />
+        <button class="primary-btn" type="submit">Salvar senha e continuar</button>
+      </form>
+      <p class="auth-message" id="password-setup-message" role="status" aria-live="polite"></p>
     </section>
   </div>
   <div class="auth-screen" id="household-setup" hidden>
@@ -589,7 +604,7 @@
               <div class="icon-wrap" style="color:var(--green)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></div>
               Receita
             </button>
-            <button class="quick-btn" onclick="openSheet('card')">
+            <button class="quick-btn" onclick="showScreen('recurring'); document.getElementById('credit-card-section').scrollIntoView({behavior:'smooth'})">
               <div class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></div>
               Fatura
             </button>
@@ -603,10 +618,10 @@
         <div class="section" id="emergency-section">
           <div class="emergency-card">
             <div class="title">🛡 Reserva de emergência</div>
-            <div class="value">R$ 0,00</div>
-            <div class="meta">Cadastre uma meta para acompanhar sua reserva.</div>
-            <div class="emergency-progress"><div class="fill" style="width:0%"></div></div>
-            <div style="font-size:12px;opacity:0.75">Seus dados aparecerão aqui quando forem cadastrados.</div>
+            <div class="value" id="emergency-reserve-balance">R$ 0,00</div>
+            <div class="meta" id="emergency-reserve-meta">Defina uma meta e registre seus aportes.</div>
+            <div class="emergency-progress"><div class="fill" id="emergency-reserve-progress" style="width:0%"></div></div>
+            <div style="font-size:12px;opacity:0.75" id="emergency-reserve-note">Aportes aparecem separados das despesas de consumo.</div>
           </div>
         </div>
 
@@ -627,7 +642,7 @@
 
         <div class="section" style="padding-bottom:32px">
           <div class="section-title">Orçamento do mês</div>
-          <div class="card"><div class="empty-state">Nenhum orçamento cadastrado.</div></div>
+          <div class="card" id="budget-overview"><div class="empty-state">Cadastre limites em Ajustes para acompanhar as fatias da renda.</div></div>
         </div>
       </div>
     </div>
@@ -705,6 +720,40 @@
           <div class="list" id="recurring-yearly" style="margin-bottom:20px"><div class="empty-state">Nenhuma despesa anual cadastrada.</div></div>
           <button class="secondary-btn" onclick="openSheet('recurring')">+ Adicionar item fixo ou anual</button>
         </div>
+        <div class="section" id="credit-card-section">
+          <div class="section-title">Cartões e faturas</div>
+          <div class="info-box">Cadastre cada cartão separadamente, inclusive adicionais/dependentes. As compras entram nas categorias; pagar a fatura não cria uma segunda despesa.</div>
+          <form id="credit-card-form" class="card">
+            <div class="form-group"><label class="form-label" for="card-label">Apelido do cartão</label><input class="form-input" id="card-label" maxlength="80" placeholder="Ex.: Nubank - Leonam" required /></div>
+            <div class="form-group"><label class="form-label" for="card-provider">Operadora</label><input class="form-input" id="card-provider" maxlength="60" placeholder="Ex.: Nubank" required /></div>
+            <div class="form-group"><label class="form-label" for="card-titular">Titular da conta</label><input class="form-input" id="card-titular" maxlength="80" required /></div>
+            <div class="form-group"><label class="form-label" for="card-holder">Pessoa que usa o cartão</label><input class="form-input" id="card-holder" maxlength="80" required /></div>
+            <div class="form-group"><label class="form-label" for="card-role">Titularidade</label><select class="form-input" id="card-role"><option value="titular">Titular</option><option value="dependent">Adicional/dependente</option></select></div>
+            <div class="form-group"><label class="form-label" for="card-last-four">Últimos 4 dígitos (opcional)</label><input class="form-input" id="card-last-four" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" /></div>
+            <div class="form-group"><label class="form-label" for="card-credit-limit">Limite do cartão (opcional)</label><div class="amount-input-wrap"><span class="currency">R$</span><input class="form-input" id="card-credit-limit" inputmode="decimal" placeholder="0,00" /></div></div>
+            <button class="secondary-btn" type="submit">Cadastrar cartão</button>
+            <p class="helper" id="credit-card-message"></p>
+          </form>
+          <div class="list" id="credit-card-list"><div class="empty-state">Nenhum cartão cadastrado.</div></div>
+          <div class="section-title">Importar fatura CSV</div>
+          <form id="card-import-form" class="card">
+            <div class="form-group"><label class="form-label" for="import-card">Cartão desta fatura</label><select class="form-input" id="import-card" required><option value="">Cadastre e selecione um cartão</option></select></div>
+            <div class="form-group"><label class="form-label" for="statement-due-date">Vencimento da fatura</label><input class="form-input" id="statement-due-date" type="date" required /></div>
+            <div class="form-group"><label class="form-label" for="statement-csv">Arquivo CSV</label><input class="form-input" id="statement-csv" type="file" accept=".csv,text/csv" required /></div>
+            <button class="secondary-btn" type="submit">Ler e conferir fatura</button>
+            <p class="helper" id="card-import-message"></p>
+          </form>
+          <div class="card" id="card-import-preview" hidden>
+            <div class="section-title">Prévia — nada será salvo até confirmar</div>
+            <p class="helper" id="card-import-summary"></p>
+            <div class="list" id="card-import-rows"></div>
+            <button class="primary-btn" id="confirm-card-import" type="button" disabled>Confirmar atualização desta fatura</button>
+          </div>
+          <div class="section-title">Faturas abertas e histórico</div>
+          <div class="list" id="card-statement-list"><div class="empty-state">As faturas importadas aparecerão aqui.</div></div>
+          <div class="section-title">Parcelas futuras previstas</div>
+          <div class="list" id="card-installment-forecast"><div class="empty-state">Importe uma fatura para calcular as parcelas futuras.</div></div>
+        </div>
       </div>
     </div>
 
@@ -729,9 +778,50 @@
           </div>
           <div class="section-title">Casa</div>
           <div class="settings-group">
-            <div class="settings-item"><div class="left"><div class="icon-box" style="background:#34c759">🏷️</div><span>Categorias</span></div><span class="chevron">›</span></div>
+            <div class="settings-item"><div class="left"><div class="icon-box" style="background:#34c759">🏷️</div><span>Categorias e subcategorias</span></div></div>
+            <form id="finance-category-form" class="card">
+              <div class="form-group"><label class="form-label" for="category-type">Tipo</label><select class="form-input" id="category-type"><option value="expense">Despesa</option><option value="income">Receita</option></select></div>
+              <div class="form-group"><label class="form-label" for="category-name">Categoria</label><input class="form-input" id="category-name" maxlength="60" required placeholder="Ex.: Transporte" /></div>
+              <div class="form-group"><label class="form-label" for="subcategory-name">Subcategoria</label><input class="form-input" id="subcategory-name" maxlength="60" required placeholder="Ex.: Combustível" /></div>
+              <div class="form-group" id="category-budget-group-wrap"><label class="form-label" for="category-budget-group">Grupo do orçamento</label><select class="form-input" id="category-budget-group"><option value="fixed">Fixo mensal</option><option value="variable" selected>Variável do dia a dia</option><option value="leisure">Lazer</option><option value="emergency">Emergencial</option></select></div>
+              <button class="secondary-btn" id="save-finance-category" type="submit">Adicionar categoria/subcategoria</button>
+              <button class="secondary-btn" id="cancel-finance-category-edit" type="button" hidden>Cancelar edição</button>
+              <p class="helper" id="finance-category-message"></p>
+            </form>
+            <div class="list" id="finance-category-list"><div class="empty-state">Suas categorias aparecerão aqui.</div></div>
+            <div class="settings-item"><div class="left"><div class="icon-box" style="background:#ff9500">📄</div><span>Preparar dados da planilha</span></div></div>
+            <div class="info-box">A conversão e a prévia acontecem no seu computador. Nenhum dado será enviado antes de você confirmar. Arquivo de senha, chave administrativa e planilha original nunca serão publicados pelo PWA.</div>
+            <form id="household-setup-import-form" class="card">
+              <div class="form-group"><label class="form-label" for="household-import-json">JSON preparado localmente</label><input class="form-input" id="household-import-json" type="file" accept=".json,application/json" required /></div>
+              <button class="secondary-btn" type="submit">Ler e conferir dados</button>
+              <p class="helper" id="household-import-message"></p>
+            </form>
+            <div class="card" id="household-import-preview" hidden>
+              <div class="section-title">Prévia de importação — nada será salvo até confirmar</div>
+              <p class="helper" id="household-import-summary"></p>
+              <div class="list" id="household-import-rows"></div>
+              <button class="primary-btn" id="confirm-household-import" type="button" disabled>Confirmar importação para esta casa</button>
+            </div>
+            <div class="settings-item"><div class="left"><div class="icon-box" style="background:#5856d6">🛡</div><span>Reserva e limites</span></div></div>
+            <form id="budget-target-form" class="card">
+              <div class="form-group"><label class="form-label" for="budget-target-type">Meta/limite</label><select class="form-input" id="budget-target-type"><option value="monthly_limit">Limite de despesas mensais</option><option value="daily_limit">Limite de despesas variáveis</option><option value="leisure_limit">Limite de lazer</option><option value="monthly_reserve_target">Aporte mensal para reserva</option><option value="emergency_fund_goal">Meta total da reserva emergencial</option><option value="card_limit">Limite de cartão</option></select></div>
+              <div class="form-group" id="budget-target-card-wrap" hidden><label class="form-label" for="budget-target-card">Cartão</label><select class="form-input" id="budget-target-card"><option value="">Selecione o cartão</option></select></div>
+              <div class="form-group"><label class="form-label" for="budget-target-label">Nome</label><input class="form-input" id="budget-target-label" maxlength="100" required /></div>
+              <div class="form-group"><label class="form-label" for="budget-target-amount">Valor</label><div class="amount-input-wrap"><span class="currency">R$</span><input class="form-input" id="budget-target-amount" inputmode="decimal" placeholder="0,00" /></div></div>
+              <button class="secondary-btn" id="save-budget-target" type="submit">Salvar meta/limite</button>
+              <button class="secondary-btn" id="cancel-budget-target-edit" type="button" hidden>Cancelar edição</button>
+              <p class="helper" id="budget-target-message"></p>
+            </form>
+            <div class="list" id="budget-target-list"><div class="empty-state">Nenhum limite ou meta cadastrado.</div></div>
+            <form id="reserve-movement-form" class="card">
+              <div class="form-group"><label class="form-label" for="reserve-direction">Movimento da reserva</label><select class="form-input" id="reserve-direction"><option value="deposit">Separar dinheiro para a reserva</option><option value="withdrawal">Retirar dinheiro da reserva</option></select></div>
+              <div class="form-group"><label class="form-label" for="reserve-amount">Valor</label><div class="amount-input-wrap"><span class="currency">R$</span><input class="form-input" id="reserve-amount" inputmode="decimal" placeholder="0,00" required /></div></div>
+              <div class="form-group"><label class="form-label" for="reserve-description">Descrição</label><input class="form-input" id="reserve-description" maxlength="120" required placeholder="Ex.: Aporte mensal" /></div>
+              <button class="secondary-btn" type="submit">Registrar movimento</button>
+              <p class="helper" id="reserve-message"></p>
+            </form>
+            <div class="settings-item" onclick="showScreen('recurring')"><div class="left"><div class="icon-box" style="background:#ff9500">💳</div><span>Cartões e faturas</span></div><span class="chevron">›</span></div>
             <div class="settings-item" onclick="showScreen('recurring')"><div class="left"><div class="icon-box" style="background:#ff9500">🔄</div><span>Itens fixos e anuais</span></div><span class="chevron">›</span></div>
-            <div class="settings-item"><div class="left"><div class="icon-box" style="background:#5856d6">🛡</div><span>Reserva de emergência</span></div><span class="chevron">›</span></div>
             <button type="button" class="settings-item action" id="open-invite"><div class="left"><div class="icon-box" style="background:#af52de">👥</div><span>Convidar membro</span></div><span class="chevron">›</span></button>
           </div>
           <div class="section-title">Membros</div>
@@ -800,19 +890,26 @@
       </div>
       <div class="form-group">
         <label class="form-label">Categoria</label>
-        <div class="category-grid">
-          <button type="button" class="cat-btn selected" data-category="Alimentação" onclick="selectCat(this)"><span class="emoji">🛒</span>Alimentação</button>
-          <button type="button" class="cat-btn" data-category="Moradia" onclick="selectCat(this)"><span class="emoji">🏠</span>Moradia</button>
-          <button type="button" class="cat-btn" data-category="Transporte" onclick="selectCat(this)"><span class="emoji">🚗</span>Transporte</button>
-          <button type="button" class="cat-btn" data-category="Cartão" onclick="selectCat(this)"><span class="emoji">💳</span>Cartão</button>
-          <button type="button" class="cat-btn" data-category="Assinaturas" onclick="selectCat(this)"><span class="emoji">📺</span>Assinaturas</button>
-          <button type="button" class="cat-btn" data-category="Contas" onclick="selectCat(this)"><span class="emoji">⚡</span>Contas</button>
-          <button type="button" class="cat-btn" data-category="Salário" onclick="selectCat(this)"><span class="emoji">💰</span>Salário</button>
-          <button type="button" class="cat-btn" data-category="Outros" onclick="selectCat(this)"><span class="emoji">📦</span>Outros</button>
-        </div>
+        <select class="form-input" id="entry-category" required><option value="">Selecione uma categoria</option></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="entry-subcategory">Subcategoria</label>
+        <select class="form-input" id="entry-subcategory" required><option value="">Selecione uma subcategoria</option></select>
+      </div>
+      <div class="form-group" id="entry-budget-group-wrap">
+        <label class="form-label" for="entry-budget-group">Grupo do orçamento</label>
+        <select class="form-input" id="entry-budget-group"><option value="fixed">Fixo mensal</option><option value="variable" selected>Variável do dia a dia</option><option value="leisure">Lazer</option><option value="emergency">Emergencial</option></select>
+      </div>
+      <div class="form-group" id="payment-method-wrap">
+        <label class="form-label" for="payment-method">Meio de pagamento</label>
+        <select class="form-input" id="payment-method"><option value="cash">Dinheiro</option><option value="debit">Débito</option><option value="transfer">Transferência/Pix</option><option value="other">Outro</option></select>
+      </div>
+      <div class="form-group" id="entry-credit-card-wrap" hidden>
+        <label class="form-label" for="entry-credit-card">Cartão</label>
+        <select class="form-input" id="entry-credit-card"><option value="">Selecione o cartão</option></select>
       </div>
       <div class="form-group" id="group-card-tip" style="display:none">
-        <div class="info-box"><strong>Fatura de cartão:</strong> lance o valor que você realmente pagou neste mês.</div>
+        <div class="info-box"><strong>Compra no crédito:</strong> categorize cada compra uma vez. O pagamento da fatura é marcado em Cartões e faturas e não entra como nova despesa.</div>
       </div>
       <button class="primary-btn" type="button" id="save-transaction">Salvar</button>
       <p class="helper" id="save-message"></p>
@@ -855,7 +952,8 @@
     function openSheet(type = 'expense') {
       if (type === 'card') {
         setType('expense'); setFreq('once');
-        document.querySelectorAll('.cat-btn').forEach(b => b.classList.toggle('selected', b.textContent.includes('Cartão')));
+        document.getElementById('payment-method').value = 'credit';
+        document.getElementById('payment-method').dispatchEvent(new Event('change'));
         document.getElementById('group-card-tip').style.display = 'block';
       } else if (type === 'recurring') {
         setType('expense'); setFreq('monthly');
@@ -876,16 +974,15 @@
       document.getElementById('btn-expense').classList.toggle('active', exp);
       document.getElementById('btn-income').classList.toggle('active', !exp);
       document.getElementById('sheet-title').textContent = exp ? 'Nova despesa' : 'Nova receita';
+      document.getElementById('entry-budget-group-wrap').hidden = !exp;
+      document.getElementById('payment-method-wrap').hidden = !exp;
+      document.getElementById('group-card-tip').style.display = 'none';
+      window.dispatchEvent(new CustomEvent('entry-type-changed'));
     }
     function setFreq(f) {
       document.querySelectorAll('.freq-btn').forEach(b => b.classList.toggle('active', b.dataset.freq === f));
       document.getElementById('group-variable').style.display = f === 'monthly' ? 'block' : 'none';
       document.getElementById('group-yearly').style.display = f === 'yearly' ? 'block' : 'none';
-    }
-    function selectCat(btn) {
-      document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('selected'));
-      btn.classList.add('selected');
-      document.getElementById('group-card-tip').style.display = btn.textContent.includes('Cartão') ? 'block' : 'none';
     }
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
 
