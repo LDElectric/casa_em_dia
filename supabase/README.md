@@ -2,12 +2,14 @@
 
 ## 1. Criar as tabelas e as políticas
 
-As migrações abaixo já foram aplicadas ao projeto vinculado `Casa_em_dia`. Em um novo projeto, abra **SQL Editor** e execute nesta ordem:
+As três primeiras migrações abaixo já foram aplicadas ao projeto vinculado `Casa_em_dia`. A quarta é nova e ainda precisa ser aplicada nesse projeto antes de usar as opções de cartão compartilhado. Em qualquer projeto, abra **SQL Editor** e execute nesta ordem:
 
 1. `migrations/20261018000000_household_finances.sql`
 2. `migrations/20261018160000_household_finance_model.sql`
+3. `migrations/20261018173000_fix_setup_import_fingerprint.sql`
+4. `migrations/20261018190000_shared_credit_card_statements.sql`
 
-A segunda migração adiciona categorias, metas, reserva, cartões, faturas e importação inicial protegida. Ambas criam tabelas vazias e políticas RLS que isolam os dados por casa.
+A segunda migração adiciona categorias, metas, reserva, cartões, faturas e importação inicial protegida. A terceira corrige o identificador da importação inicial. A quarta permite cadastrar uma conta/cartão geral com fatura consolidada e guardar a identificação opcional de quem fez cada compra. As migrações criam estruturas vazias e mantêm as políticas RLS que isolam os dados por casa.
 
 ## 2. Preparar a primeira conta
 
@@ -37,3 +39,7 @@ Na tela de entrada, **“Primeiro acesso: já recebi um convite”** solicita um
 ## 4. Publicar e instalar o PWA
 
 Sirva a aplicação por HTTPS em hospedagem estática (ou por `localhost` durante o desenvolvimento). O acesso por `file://` não permite service workers e não serve para testar a instalação/offline. A URL e a chave **publishable** em `supabase-config.js` são informações públicas do cliente; a proteção dos dados vem das políticas RLS da migração.
+
+Em **Fixos & Anuais → Cartões e faturas**, escolha **Cartão geral — vários cartões na mesma fatura** quando os cartões físicos chegam em uma única fatura. Importe o CSV consolidado; na prévia, é possível identificar quem fez cada compra, classificar a despesa e revisar valores antes de confirmar. O arquivo é lido localmente e não é enviado até a confirmação.
+
+O CSV precisa ter as colunas `date`, `title` e `amount`; uma coluna `cardholder` (ou `card`, `holder`, `titular`) é opcional. Mesmo sem essa coluna, a pessoa/cartão adicional pode ser informada linha a linha na prévia.

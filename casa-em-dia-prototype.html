@@ -34,7 +34,7 @@
       --separator: rgba(60,60,67,0.12); --accent: #007aff; --accent-soft: rgba(0,122,255,0.12);
       --green: #34c759; --red: #ff3b30; --orange: #ff9500; --purple: #af52de;
       --card-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03);
-      --tab-bar-bg: rgba(255,255,255,0.88); --nav-bg: rgba(242,242,247,0.85); --status-bar: #000;
+      --tab-bar-bg: rgba(255,255,255,0.88); --nav-bg: rgba(242,242,247,0.85);
       --desktop-max: 1120px;
     }
     [data-theme="dark"] {
@@ -43,7 +43,7 @@
       --separator: rgba(84,84,88,0.65); --accent: #0a84ff; --accent-soft: rgba(10,132,255,0.18);
       --green: #30d158; --red: #ff453a; --orange: #ff9f0a; --purple: #bf5af2;
       --card-shadow: 0 1px 3px rgba(0,0,0,0.3);
-      --tab-bar-bg: rgba(28,28,30,0.88); --nav-bg: rgba(0,0,0,0.7); --status-bar: #fff;
+      --tab-bar-bg: rgba(28,28,30,0.88); --nav-bg: rgba(0,0,0,0.7);
     }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
@@ -52,7 +52,7 @@
         --separator: rgba(84,84,88,0.65); --accent: #0a84ff; --accent-soft: rgba(10,132,255,0.18);
         --green: #30d158; --red: #ff453a; --orange: #ff9f0a; --purple: #bf5af2;
         --card-shadow: 0 1px 3px rgba(0,0,0,0.3);
-        --tab-bar-bg: rgba(28,28,30,0.88); --nav-bg: rgba(0,0,0,0.7); --status-bar: #fff;
+        --tab-bar-bg: rgba(28,28,30,0.88); --nav-bg: rgba(0,0,0,0.7);
       }
     }
 
@@ -67,6 +67,7 @@
       background: var(--bg);
       box-shadow: 0 0 40px rgba(0,0,0,0.12);
       overflow: hidden;
+      padding-top: env(safe-area-inset-top, 0px);
     }
     .auth-screen {
       position: fixed; inset: 0; z-index: 500; display: grid; place-items: center;
@@ -97,23 +98,6 @@
       box-shadow: 0 4px 16px rgba(0,0,0,.2); font-size: 14px;
     }
     [hidden] { display: none !important; }
-
-    .status-bar {
-      height: env(safe-area-inset-top, 44px);
-      min-height: 44px;
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      padding: 0 20px 6px;
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--status-bar);
-      z-index: 100;
-      flex-shrink: 0;
-    }
-    .status-bar .time { font-variant-numeric: tabular-nums; }
-    .status-bar .icons { display: flex; gap: 6px; align-items: center; }
-    .status-bar svg { width: 16px; height: 16px; fill: currentColor; }
 
     .desktop-header {
       display: none;
@@ -420,7 +404,6 @@
         overflow: visible;
       }
 
-      .status-bar { display: none !important; }
       .tab-bar { display: none !important; }
       .fab { display: none !important; }
       .mobile-only-theme { display: none !important; }
@@ -485,14 +468,16 @@
       .desktop-grid { grid-template-columns: 1.2fr 1fr; }
     }
 
-    @supports (padding: env(safe-area-inset-top)) {
-      .status-bar { height: max(44px, env(safe-area-inset-top)); }
-    }
   </style>
 </head>
 <body>
   <div class="auth-screen" id="auth-screen">
-    <section class="auth-card" id="auth-login-card" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+    <section class="auth-card" id="auth-status-card" role="status" aria-live="polite">
+      <h1 id="auth-status-title">Reconectando</h1>
+      <p id="auth-status-message">Verificando sua sessão segura...</p>
+      <button class="primary-btn" id="auth-retry" type="button" hidden>Tentar novamente</button>
+    </section>
+    <section class="auth-card" id="auth-login-card" role="dialog" aria-modal="true" aria-labelledby="auth-title" hidden>
       <h1 id="auth-title">Casa em Dia</h1>
       <p>Entre com o e-mail convidado e sua senha. Novas contas só podem ser adicionadas pelo responsável da casa.</p>
       <form id="auth-form">
@@ -559,15 +544,6 @@
   </div>
   <div class="app-toast" id="app-toast" role="status" aria-live="polite" hidden></div>
   <div class="app" id="app-shell" inert>
-    <div class="status-bar">
-      <span class="time" id="clock">9:41</span>
-      <div class="icons">
-        <svg viewBox="0 0 16 16"><path d="M1 10.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-3zm3-3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-6zm3-3a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-9zm3 1.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v7.5a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5V6z"/></svg>
-        <svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 0 0-4.95 11.95l.707-.707A6 6 0 1 1 8 2V1zm0 3a4 4 0 0 0-2.828 6.828l.707-.707A3 3 0 1 1 8 5V4z"/></svg>
-        <svg viewBox="0 0 25 12" width="25" height="12"><rect x="0" y="1" width="21" height="10" rx="2.5" stroke="currentColor" stroke-width="1.2" fill="none"/><rect x="2" y="3" width="15" height="6" rx="1.2" fill="currentColor"/><path d="M23 4v4a1.5 1.5 0 0 0 0-4z" fill="currentColor"/></svg>
-      </div>
-    </div>
-
     <header class="desktop-header">
       <div class="logo">Casa <span>em Dia</span></div>
       <nav class="desktop-nav">
@@ -735,14 +711,15 @@
         </div>
         <div class="section" id="credit-card-section">
           <div class="section-title">Cartões e faturas</div>
-          <div class="info-box">Cadastre cada cartão separadamente, inclusive adicionais/dependentes. As compras entram nas categorias; pagar a fatura não cria uma segunda despesa.</div>
+          <div class="info-box">Cadastre um cartão individual ou uma conta geral para vários cartões que chegam em uma única fatura. Importe o CSV consolidado e identifique quem fez cada compra, se quiser. Pagar a fatura não cria uma segunda despesa.</div>
           <form id="credit-card-form" class="card">
-            <div class="form-group"><label class="form-label" for="card-label">Apelido do cartão</label><input class="form-input" id="card-label" maxlength="80" placeholder="Ex.: Nubank - Leonam" required /></div>
+            <div class="form-group"><label class="form-label" for="card-statement-scope">Organização da fatura</label><select class="form-input" id="card-statement-scope"><option value="individual">Um cartão por fatura</option><option value="shared">Cartão geral — vários cartões na mesma fatura</option></select></div>
+            <div class="form-group"><label class="form-label" for="card-label">Apelido</label><input class="form-input" id="card-label" maxlength="80" placeholder="Ex.: Cartão da casa" required /></div>
             <div class="form-group"><label class="form-label" for="card-provider">Operadora</label><input class="form-input" id="card-provider" maxlength="60" placeholder="Ex.: Nubank" required /></div>
             <div class="form-group"><label class="form-label" for="card-titular">Titular da conta</label><input class="form-input" id="card-titular" maxlength="80" required /></div>
-            <div class="form-group"><label class="form-label" for="card-holder">Pessoa que usa o cartão</label><input class="form-input" id="card-holder" maxlength="80" required /></div>
-            <div class="form-group"><label class="form-label" for="card-role">Titularidade</label><select class="form-input" id="card-role"><option value="titular">Titular</option><option value="dependent">Adicional/dependente</option></select></div>
-            <div class="form-group"><label class="form-label" for="card-last-four">Últimos 4 dígitos (opcional)</label><input class="form-input" id="card-last-four" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" /></div>
+            <div class="form-group" id="card-holder-wrap"><label class="form-label" for="card-holder">Pessoa que usa o cartão</label><input class="form-input" id="card-holder" maxlength="80" required /></div>
+            <div class="form-group" id="card-role-wrap"><label class="form-label" for="card-role">Titularidade</label><select class="form-input" id="card-role"><option value="titular">Titular</option><option value="dependent">Adicional/dependente</option></select></div>
+            <div class="form-group" id="card-last-four-wrap"><label class="form-label" for="card-last-four">Últimos 4 dígitos (opcional)</label><input class="form-input" id="card-last-four" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" /></div>
             <div class="form-group"><label class="form-label" for="card-credit-limit">Limite do cartão (opcional)</label><div class="amount-input-wrap"><span class="currency">R$</span><input class="form-input" id="card-credit-limit" inputmode="decimal" placeholder="0,00" /></div></div>
             <button class="secondary-btn" type="submit">Cadastrar cartão</button>
             <p class="helper" id="credit-card-message"></p>
@@ -751,9 +728,9 @@
           <div class="section-title">Importar fatura CSV</div>
           <form id="card-import-form" class="card">
             <div class="form-group"><label class="form-label" for="import-card">Cartão desta fatura</label><select class="form-input" id="import-card" required><option value="">Cadastre e selecione um cartão</option></select></div>
-            <div class="form-group"><label class="form-label" for="statement-due-date">Vencimento da fatura</label><input class="form-input" id="statement-due-date" type="date" required /></div>
-            <div class="form-group"><label class="form-label" for="statement-csv">Arquivo CSV</label><input class="form-input" id="statement-csv" type="file" accept=".csv,text/csv" required /></div>
-            <button class="secondary-btn" type="submit">Ler e conferir fatura</button>
+            <div class="form-group"><label class="form-label" for="statement-csv">Arquivo da fatura (CSV)</label><input class="form-input" id="statement-csv" type="file" accept=".csv,text/csv" required /><span class="helper">Lido no seu dispositivo; só é enviado ao confirmar a prévia.</span></div>
+            <div class="form-group"><label class="form-label" for="statement-due-date">Vencimento</label><input class="form-input" id="statement-due-date" type="date" required /></div>
+            <button class="secondary-btn" type="submit">Analisar e conferir fatura</button>
             <p class="helper" id="card-import-message"></p>
           </form>
           <div class="card" id="card-import-preview" hidden>
@@ -932,12 +909,6 @@
   <script src="./supabase-config.js"></script>
   <script type="module" src="./app.js"></script>
   <script>
-    function updateClock() {
-      const n = new Date();
-      document.getElementById('clock').textContent = n.getHours().toString().padStart(2,'0') + ':' + n.getMinutes().toString().padStart(2,'0');
-    }
-    updateClock(); setInterval(updateClock, 30000);
-
     function setTheme(t) {
       document.documentElement.setAttribute('data-theme', t);
       document.querySelectorAll('.theme-opt').forEach(b => b.classList.toggle('active', b.dataset.theme === t));

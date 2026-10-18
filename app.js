@@ -33,6 +33,7 @@ const state = {
   authCallbackPending: initialAuthCallback,
   passwordSetupPending: false,
   completingPasswordSetup: false,
+  sessionRefreshPromise: null,
   insightsMonthIndex: 5
 };
 
@@ -69,8 +70,10 @@ const DEFAULT_FINANCE_CATEGORIES = [
 ];
 
 if (!config?.url || !config?.publishableKey) {
-  document.getElementById('auth-message').textContent =
+  document.getElementById('auth-status-title').textContent = 'Configuração necessária';
+  document.getElementById('auth-status-message').textContent =
     'A configuração pública do Supabase está incompleta.';
+  document.getElementById('auth-status-card').hidden = false;
 } else {
   const supabase = createClient(config.url, config.publishableKey, {
     auth: { flowType: 'pkce', autoRefreshToken: true, persistSession: true }
@@ -89,6 +92,7 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('back-to-login').addEventListener('click', showLoginCard);
     document.getElementById('password-setup-form').addEventListener('submit', setAccountPassword);
     document.getElementById('password-setup-back').addEventListener('click', cancelPasswordSetup);
+    document.getElementById('auth-retry').addEventListener('click', refreshSession);
     document.getElementById('household-form').addEventListener('submit', createHousehold);
     document.getElementById('invite-form').addEventListener('submit', inviteMember);
     document.getElementById('save-transaction').addEventListener('click', saveEntry);
@@ -112,6 +116,7 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('confirm-household-import').addEventListener('click', confirmHouseholdImport);
     document.getElementById('reserve-movement-form').addEventListener('submit', saveReserveMovement);
     document.getElementById('credit-card-form').addEventListener('submit', saveCreditCard);
+    document.getElementById('card-statement-scope').addEventListener('change', updateCardScopeFields);
     document.getElementById('card-import-form').addEventListener('submit', prepareCardImport);
     document.getElementById('confirm-card-import').addEventListener('click', confirmCardImport);
     document.getElementById('statement-csv').addEventListener('change', suggestDueDateFromFile);
@@ -122,6 +127,7 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('invite-dialog').addEventListener('click', event => {
       if (event.target.id === 'invite-dialog') closeInviteDialog();
     });
+    updateCardScopeFields();
     window.addEventListener('insights-month-changed', event => {
       state.insightsMonthIndex = event.detail.index;
       renderFinancialData();
@@ -129,8 +135,8 @@ if (!config?.url || !config?.publishableKey) {
 
     const { data, error } = await supabase.auth.getSession();
     if (error) {
-      setMessage('auth-message', 'Não foi possível verificar a sessão. Recarregue a página.');
       console.error('Could not read Supabase session:', error.message);
+      showAuthStatus('Não foi possível verificar sua sessão. Confira a conexão e tente novamente.', true);
       return;
     }
     await handleSession(data.session);
@@ -144,6 +150,66 @@ if (!config?.url || !config?.publishableKey) {
         });
       });
     });
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') refreshSession();
+    });
+    window.addEventListener('pageshow', event => {
+      if (event.persisted) refreshSession();
+    });
+  }
+
+  async function refreshSession() {
+    if (state.sessionRefreshPromise || state.authCallbackPending || state.passwordSetupPending) return;
+    state.sessionRefreshPromise = (async () => {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) {
+        console.error('Could not restore Supabase session:', error.message);
+        if (state.user && !authScreen.hidden) {
+          showAuthStatus('Não foi possível reconectar à sua conta. Confira a internet e tente novamente.', true);
+        } else {
+          showToast('Não foi possível atualizar sua sessão. Confira a conexão.');
+        }
+        return;
+      }
+      const session = data.session;
+      if (!session?.user) {
+        await handleSession(null);
+        return;
+      }
+      if (state.user?.id !== session.user.id || !state.membership) {
+        await handleSession(session);
+        return;
+      }
+      if (await loadHouseholdData()) {
+        authScreen.hidden = true;
+        setupScreen.hidden = true;
+        appShell.inert = false;
+      } else {
+        showToast('Sessão mantida. Não foi possível atualizar os dados; tente novamente quando houver conexão.');
+      }
+    })();
+    try {
+      await state.sessionRefreshPromise;
+    } catch (error) {
+      console.error('Could not refresh authenticated app:', error);
+      showToast('Não foi possível atualizar os dados da casa.');
+    } finally {
+      state.sessionRefreshPromise = null;
+    }
+  }
+
+  function showAuthStatus(message, canRetry = false) {
+    authScreen.hidden = false;
+    setupScreen.hidden = true;
+    appShell.inert = true;
+    document.getElementById('auth-status-card').hidden = false;
+    document.getElementById('auth-status-title').textContent =
+      canRetry ? 'Sem conexão com a casa' : 'Reconectando';
+    document.getElementById('auth-status-message').textContent = message;
+    document.getElementById('auth-retry').hidden = !canRetry;
+    document.getElementById('auth-login-card').hidden = true;
+    document.getElementById('auth-link-card').hidden = true;
+    document.getElementById('auth-password-card').hidden = true;
   }
 
   async function signInWithPassword(event) {
@@ -338,6 +404,7 @@ if (!config?.url || !config?.publishableKey) {
       authScreen.hidden = false;
       setupScreen.hidden = true;
       appShell.inert = true;
+      document.getElementById('auth-status-card').hidden = true;
       if (state.authLinkFlow) {
         document.getElementById('auth-login-card').hidden = true;
         document.getElementById('auth-link-card').hidden = false;
@@ -353,11 +420,14 @@ if (!config?.url || !config?.publishableKey) {
       return;
     }
 
+    if (state.user?.id !== session.user.id) state.membership = null;
     state.user = session.user;
     authScreen.hidden = false;
     setupScreen.hidden = true;
     appShell.inert = true;
+    showAuthStatus('Verificando sua sessão e os dados da casa...');
     if (isPasswordSetupFlow()) {
+      document.getElementById('auth-status-card').hidden = true;
       document.getElementById('auth-login-card').hidden = true;
       document.getElementById('auth-link-card').hidden = true;
       document.getElementById('auth-password-card').hidden = false;
@@ -365,10 +435,6 @@ if (!config?.url || !config?.publishableKey) {
       document.getElementById('new-password').focus();
       return;
     }
-    document.getElementById('auth-login-card').hidden = false;
-    document.getElementById('auth-link-card').hidden = true;
-    document.getElementById('auth-password-card').hidden = true;
-    setMessage('auth-message', 'Verificando o acesso à casa...');
     const { data: membership, error } = await supabase
       .from('household_members')
       .select('household_id, role, email')
@@ -376,7 +442,7 @@ if (!config?.url || !config?.publishableKey) {
       .maybeSingle();
     if (error) {
       console.error('Could not load household membership:', error.message);
-      setMessage('auth-message', 'Não foi possível verificar sua casa. Confira a conexão e a configuração do banco.');
+      showAuthStatus('Não foi possível verificar sua casa. Confira a conexão e tente novamente.', true);
       return;
     }
 
@@ -394,7 +460,7 @@ if (!config?.url || !config?.publishableKey) {
       setupScreen.hidden = true;
       appShell.inert = false;
     } else {
-      setMessage('auth-message', 'Não foi possível carregar os dados da casa. Recarregue a página para tentar novamente.');
+      showAuthStatus('Não foi possível carregar os dados da casa. Sua sessão continua protegida; tente novamente.', true);
     }
   }
 
@@ -417,7 +483,7 @@ if (!config?.url || !config?.publishableKey) {
   }
 
   async function loadHouseholdData() {
-    if (!state.membership || !state.user) return;
+    if (!state.membership || !state.user) return false;
     const householdId = state.membership.household_id;
     if (!await ensureDefaultFinanceCategories()) return false;
     const sixMonthsAgo = new Date();
@@ -469,7 +535,7 @@ if (!config?.url || !config?.publishableKey) {
         .eq('household_id', householdId)
         .order('movement_date', { ascending: false }),
       supabase.from('credit_cards')
-        .select('id, label, provider, titular_name, cardholder_name, card_role, last_four, credit_limit_cents, active')
+        .select('id, label, provider, titular_name, cardholder_name, card_role, statement_scope, last_four, credit_limit_cents, active')
         .eq('household_id', householdId)
         .order('label'),
       supabase.from('card_statements')
@@ -477,7 +543,7 @@ if (!config?.url || !config?.publishableKey) {
         .eq('household_id', householdId)
         .order('due_date', { ascending: false }),
       supabase.from('card_statement_items')
-        .select('id, statement_id, source_key, purchase_date, title, amount_cents, installment_number, installment_total, category, subcategory, budget_group')
+        .select('id, statement_id, source_key, purchase_date, title, cardholder_label, amount_cents, installment_number, installment_total, category, subcategory, budget_group')
         .eq('household_id', householdId)
         .order('purchase_date', { ascending: false })
     ]);
@@ -1147,14 +1213,18 @@ if (!config?.url || !config?.publishableKey) {
 
   async function saveCreditCard(event) {
     event.preventDefault();
+    const statementScope = document.getElementById('card-statement-scope').value;
     const label = document.getElementById('card-label').value.trim();
     const provider = document.getElementById('card-provider').value.trim();
     const titularName = document.getElementById('card-titular').value.trim();
-    const cardholderName = document.getElementById('card-holder').value.trim();
-    const lastFour = document.getElementById('card-last-four').value.trim();
+    const cardholderName = statementScope === 'shared'
+      ? 'Vários cartões'
+      : document.getElementById('card-holder').value.trim();
+    const lastFour = statementScope === 'shared' ? '' : document.getElementById('card-last-four').value.trim();
     const limitValue = document.getElementById('card-credit-limit').value.trim();
     const limit = limitValue ? parseAmount(limitValue) : null;
-    if (!label || !provider || !titularName || !cardholderName
+    if (!['individual', 'shared'].includes(statementScope)
+      || !label || !provider || !titularName || !cardholderName
       || (lastFour && !/^\d{4}$/.test(lastFour))
       || (limitValue && (!Number.isSafeInteger(limit) || limit <= 0))) {
       setMessage('credit-card-message', 'Confira os campos do cartão. Nunca informe o número completo ou o código de segurança.');
@@ -1166,7 +1236,8 @@ if (!config?.url || !config?.publishableKey) {
       provider,
       titular_name: titularName,
       cardholder_name: cardholderName,
-      card_role: document.getElementById('card-role').value,
+      card_role: statementScope === 'shared' ? 'titular' : document.getElementById('card-role').value,
+      statement_scope: statementScope,
       last_four: lastFour || null,
       credit_limit_cents: limit,
       created_by: state.user.id
@@ -1177,6 +1248,7 @@ if (!config?.url || !config?.publishableKey) {
       return;
     }
     event.target.reset();
+    updateCardScopeFields();
     setMessage('credit-card-message', 'Cartão cadastrado.');
     await loadHouseholdData();
   }
@@ -1192,7 +1264,10 @@ if (!config?.url || !config?.publishableKey) {
     entrySelect.replaceChildren(new Option('Selecione o cartão', ''));
     const activeCards = state.creditCards.filter(card => card.active);
     for (const card of activeCards) {
-      importSelect.add(new Option(`${card.label} · vence por fatura`, card.id));
+      importSelect.add(new Option(
+        `${card.label}${card.statement_scope === 'shared' ? ' · fatura compartilhada' : ''}`,
+        card.id
+      ));
       entrySelect.add(new Option(card.label, card.id));
       const row = document.createElement('div');
       row.className = 'list-item';
@@ -1203,12 +1278,16 @@ if (!config?.url || !config?.publishableKey) {
       title.textContent = card.label;
       const subtitle = document.createElement('div');
       subtitle.className = 'subtitle';
-      const ownership = card.card_role === 'dependent' ? 'Adicional/dependente' : 'Titular';
+      const ownership = card.statement_scope === 'shared'
+        ? 'Cartão geral · vários cartões na mesma fatura'
+        : card.card_role === 'dependent' ? 'Adicional/dependente' : 'Titular';
       const digits = card.last_four ? ` · final ${card.last_four}` : '';
       const limit = card.credit_limit_cents
         ? ` · limite ${formatMoney(Number(card.credit_limit_cents))}`
         : '';
-      subtitle.textContent = `${card.provider} · Titular: ${card.titular_name} · Usuário: ${card.cardholder_name} · ${ownership}${digits}${limit}`;
+      subtitle.textContent = card.statement_scope === 'shared'
+        ? `${card.provider} · Titular: ${card.titular_name} · ${ownership}${limit}`
+        : `${card.provider} · Titular: ${card.titular_name} · Usuário: ${card.cardholder_name} · ${ownership}${digits}${limit}`;
       info.append(title, subtitle);
       row.append(info);
       container.append(row);
@@ -1218,6 +1297,14 @@ if (!config?.url || !config?.publishableKey) {
     if (!activeCards.length) appendEmptyState(container, 'Nenhum cartão cadastrado.');
     updatePaymentFields();
     updateBudgetTargetCardField();
+  }
+
+  function updateCardScopeFields() {
+    const isShared = document.getElementById('card-statement-scope').value === 'shared';
+    for (const id of ['card-holder-wrap', 'card-role-wrap', 'card-last-four-wrap']) {
+      document.getElementById(id).hidden = isShared;
+    }
+    document.getElementById('card-holder').required = !isShared;
   }
 
   async function suggestDueDateFromFile(event) {
@@ -1267,7 +1354,7 @@ if (!config?.url || !config?.publishableKey) {
       if (existingStatement) {
         const { data, error } = await supabase
           .from('card_statement_items')
-          .select('source_key, category, subcategory, budget_group')
+          .select('source_key, cardholder_label, category, subcategory, budget_group')
           .eq('statement_id', existingStatement.id);
         if (error) throw error;
         existingItems = data;
@@ -1279,10 +1366,18 @@ if (!config?.url || !config?.publishableKey) {
         fileName: file.name,
         fingerprint,
         existingStatement,
-        rows: rowsWithKeys.map(row => ({
-          ...row,
-          ...(categoryBySource.get(row.source_key) ?? {})
-        }))
+        rows: rowsWithKeys.map(row => {
+          const existingItem = categoryBySource.get(row.source_key);
+          return {
+            ...row,
+            cardholder_label: row.cardholder_label || existingItem?.cardholder_label || null,
+            ...(existingItem && {
+              category: existingItem.category,
+              subcategory: existingItem.subcategory,
+              budget_group: existingItem.budget_group
+            })
+          };
+        })
       };
       renderCardImportPreview();
       setMessage('card-import-message', '');
@@ -1296,10 +1391,12 @@ if (!config?.url || !config?.publishableKey) {
   function parseCardCsv(text) {
     const records = parseCsvRecords(text.replace(/^\uFEFF/, ''));
     if (records.length < 2) throw new Error('O CSV deve ter cabeçalho e pelo menos uma linha.');
-    const headers = records[0].map(header => header.trim().toLowerCase());
+    const headers = records[0].map(header => normalizeCsvHeader(header));
     const dateIndex = headers.indexOf('date');
     const titleIndex = headers.indexOf('title');
     const amountIndex = headers.indexOf('amount');
+    const cardholderIndex = headers.findIndex(header =>
+      ['cardholder', 'card_holder', 'holder', 'card', 'card_name', 'cartao', 'titular'].includes(header));
     if (dateIndex < 0 || titleIndex < 0 || amountIndex < 0) {
       throw new Error('Formato não reconhecido. O CSV precisa conter date, title e amount.');
     }
@@ -1324,11 +1421,17 @@ if (!config?.url || !config?.publishableKey) {
       return {
         purchase_date: purchaseDate,
         title,
+        cardholder_label: cardholderIndex < 0 ? '' : (row[cardholderIndex] ?? '').trim().slice(0, 80),
         amount_cents: amount,
         installment_number: installmentNumber,
         installment_total: installmentTotal
       };
     });
+  }
+
+  function normalizeCsvHeader(header) {
+    return header.trim().toLocaleLowerCase('pt-BR')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '_');
   }
 
   function parseCsvRecords(text) {
@@ -1415,7 +1518,8 @@ if (!config?.url || !config?.publishableKey) {
         row.title.normalize('NFKC').trim().toLocaleLowerCase('pt-BR'),
         row.amount_cents,
         row.installment_number ?? '',
-        row.installment_total ?? ''
+        row.installment_total ?? '',
+        row.cardholder_label ?? ''
       ].join('|');
       const occurrence = occurrences.get(normalized) ?? 0;
       occurrences.set(normalized, occurrence + 1);
@@ -1451,6 +1555,16 @@ if (!config?.url || !config?.publishableKey) {
         ? ` · Parcela ${item.installment_number}/${item.installment_total}`
         : '';
       subtitle.textContent = `${formatDate(item.purchase_date)} · ${formatMoney(item.amount_cents)}${installment}`;
+      const cardholder = document.createElement('input');
+      cardholder.className = 'form-input';
+      cardholder.maxLength = 80;
+      cardholder.autocomplete = 'off';
+      cardholder.placeholder = 'Pessoa/cartão adicional (opcional)';
+      cardholder.value = item.cardholder_label ?? '';
+      cardholder.setAttribute('aria-label', `Pessoa que fez a compra: ${item.title}`);
+      cardholder.addEventListener('input', () => {
+        item.cardholder_label = cardholder.value.trim().slice(0, 80);
+      });
       const category = createCategorySelect(item.category, item.subcategory);
       const group = document.createElement('select');
       group.className = 'form-input';
@@ -1473,7 +1587,7 @@ if (!config?.url || !config?.publishableKey) {
         item.subcategory = null;
       });
       group.addEventListener('change', () => { item.budget_group = group.value; });
-      info.append(title, subtitle, category.categorySelect, category.subcategorySelect, group);
+      info.append(title, subtitle, cardholder, category.categorySelect, category.subcategorySelect, group);
       row.append(info);
       container.append(row);
     }
@@ -1547,6 +1661,7 @@ if (!config?.url || !config?.publishableKey) {
       source_key: item.source_key,
       purchase_date: item.purchase_date,
       title: item.title,
+      cardholder_label: item.cardholder_label || null,
       amount_cents: item.amount_cents,
       installment_number: item.installment_number,
       installment_total: item.installment_total,
@@ -1611,7 +1726,11 @@ if (!config?.url || !config?.publishableKey) {
         detailTitle.textContent = item.title;
         const detailSubtitle = document.createElement('div');
         detailSubtitle.className = 'subtitle';
-        detailSubtitle.textContent = `${item.category ? `${item.category} · ${item.subcategory}` : 'Sem categoria'}${item.installment_number ? ` · ${item.installment_number}/${item.installment_total}` : ''}`;
+        detailSubtitle.textContent = [
+          item.cardholder_label,
+          item.category ? `${item.category} · ${item.subcategory}` : 'Sem categoria',
+          item.installment_number ? `${item.installment_number}/${item.installment_total}` : null
+        ].filter(Boolean).join(' · ');
         const category = createCategorySelect(item.category, item.subcategory);
         const group = document.createElement('select');
         group.className = 'form-input';

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'casa-em-dia-v3';
+const CACHE_NAME = 'casa-em-dia-v4';
 const APP_SHELL = [
   './',
   './index.html',
@@ -35,18 +35,10 @@ self.addEventListener('fetch', event => {
 
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request)
-        .then(async response => {
-          if (response.ok) {
-            const cache = await caches.open(CACHE_NAME);
-            await cache.put(event.request, response.clone());
-          }
-          return response;
-        })
-        .catch(async () =>
+      fetch(event.request).catch(async () =>
           (await caches.match(event.request)) ||
           caches.match('./casa-em-dia-prototype.html')
-        )
+      )
     );
     return;
   }
