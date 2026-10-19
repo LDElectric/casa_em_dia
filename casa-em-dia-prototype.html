@@ -211,13 +211,13 @@
       border-radius: 8px; padding: 8px; font: inherit; cursor: pointer;
     }
     .control-row-actions .save { color: var(--accent); font-size: 12px; font-weight: 650; }
-    .control-add-form {
-      display: grid; grid-template-columns: minmax(0, 1fr) minmax(112px, .8fr) minmax(96px, .7fr) auto;
-      gap: 8px; align-items: center; padding: 12px; margin: 12px 0 20px;
-      background: var(--bg-elevated); border: 1px solid var(--separator); border-radius: 14px;
+    .control-quick-add {
+      display: grid; grid-template-columns: minmax(0, 1fr) minmax(98px, 132px) auto;
+      gap: 8px; align-items: center; padding: 12px;
+      border-top: 1px solid var(--separator);
     }
-    .control-add-form .form-input { margin: 0; padding: 11px 10px; font-size: 14px; }
-    .control-add-form button { padding: 11px 14px; }
+    .control-quick-add .form-input { min-width: 0; margin: 0; padding: 10px; font-size: 14px; }
+    .control-quick-add button { padding: 10px 12px; white-space: nowrap; }
     .control-copy-button { width: 100%; margin: 0 0 12px; }
     .control-card-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; }
     .control-card-row + .control-card-row { border-top: 1px solid var(--separator); }
@@ -664,33 +664,42 @@
           </div>
           <div class="info-box">Preencha os valores mensais e expanda os grupos para ver as compras do cartão. Parcelas futuras são previstas automaticamente; não lance a mesma fatura como outra despesa.</div>
           <button class="secondary-btn control-copy-button" id="copy-control-items" type="button">Trazer os itens do mês anterior</button>
-          <form class="control-add-form" id="monthly-control-form">
-            <input class="form-input" id="control-item-name" maxlength="120" placeholder="Nome do item (ex.: Salário)" aria-label="Nome do item" required />
-            <select class="form-input" id="control-item-group" aria-label="Tipo do item">
-              <option value="income">Receita</option>
-              <option value="fixed">Gasto fixo</option>
-              <option value="variable">Gasto variável</option>
-              <option value="additional">Gasto adicional</option>
-            </select>
-            <input class="form-input" id="control-item-amount" inputmode="decimal" placeholder="R$ 0,00" aria-label="Valor do item" />
-            <button class="primary-btn" type="submit">Adicionar</button>
-          </form>
           <p class="helper" id="monthly-control-message" role="status" aria-live="polite"></p>
           <details class="control-group" aria-labelledby="control-income-title">
             <summary class="control-group-heading"><h2 id="control-income-title">Receitas</h2><span class="control-group-total" id="control-income-total">R$ 0,00</span></summary>
             <div class="control-list" id="control-income-list"></div>
+            <form class="control-quick-add" data-control-group="income">
+              <input class="form-input" name="item_name" maxlength="120" placeholder="Nome da receita" aria-label="Nome da receita" required />
+              <input class="form-input" name="amount" inputmode="decimal" placeholder="Valor" aria-label="Valor da receita" />
+              <button class="primary-btn" type="submit">Adicionar</button>
+            </form>
           </details>
           <details class="control-group" aria-labelledby="control-fixed-title">
             <summary class="control-group-heading"><h2 id="control-fixed-title">Gastos fixos</h2><span class="control-group-total" id="control-fixed-total">R$ 0,00</span></summary>
             <div class="control-list" id="control-fixed-list"></div>
+            <form class="control-quick-add" data-control-group="fixed">
+              <input class="form-input" name="item_name" maxlength="120" placeholder="Nome da despesa" aria-label="Nome da despesa fixa" required />
+              <input class="form-input" name="amount" inputmode="decimal" placeholder="Valor" aria-label="Valor da despesa fixa" />
+              <button class="primary-btn" type="submit">Adicionar</button>
+            </form>
           </details>
           <details class="control-group" aria-labelledby="control-variable-title">
             <summary class="control-group-heading"><h2 id="control-variable-title">Gastos variáveis</h2><span class="control-group-total" id="control-variable-total">R$ 0,00</span></summary>
             <div class="control-list" id="control-variable-list"></div>
+            <form class="control-quick-add" data-control-group="variable">
+              <input class="form-input" name="item_name" maxlength="120" placeholder="Nome da despesa" aria-label="Nome da despesa variável" required />
+              <input class="form-input" name="amount" inputmode="decimal" placeholder="Valor" aria-label="Valor da despesa variável" />
+              <button class="primary-btn" type="submit">Adicionar</button>
+            </form>
           </details>
           <details class="control-group" aria-labelledby="control-additional-title">
             <summary class="control-group-heading"><h2 id="control-additional-title">Gastos adicionais</h2><span class="control-group-total" id="control-additional-total">R$ 0,00</span></summary>
             <div class="control-list" id="control-additional-list"></div>
+            <form class="control-quick-add" data-control-group="additional">
+              <input class="form-input" name="item_name" maxlength="120" placeholder="Nome da despesa" aria-label="Nome da despesa adicional" required />
+              <input class="form-input" name="amount" inputmode="decimal" placeholder="Valor" aria-label="Valor da despesa adicional" />
+              <button class="primary-btn" type="submit">Adicionar</button>
+            </form>
           </details>
           <details class="control-group" aria-labelledby="control-card-title">
             <summary class="control-group-heading"><h2 id="control-card-title">Faturas de cartão</h2><span class="control-group-total" id="control-cards-total">R$ 0,00</span></summary>

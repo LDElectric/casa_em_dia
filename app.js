@@ -130,7 +130,8 @@ if (!config?.url || !config?.publishableKey) {
     if (scopeField) scopeField.addEventListener('change', updateCardScopeFields);
     document.getElementById('card-import-form').addEventListener('submit', prepareCardImport);
     document.getElementById('confirm-card-import').addEventListener('click', confirmCardImport);
-    document.getElementById('monthly-control-form').addEventListener('submit', addMonthlyControlItem);
+    document.querySelectorAll('.control-quick-add').forEach(form =>
+      form.addEventListener('submit', addMonthlyControlItem));
     document.getElementById('copy-control-items').addEventListener('click', copyPreviousMonthItems);
     window.addEventListener('control-month-changed', event => {
       state.controlMonthKey = event.detail.monthKey;
@@ -2329,9 +2330,10 @@ if (!config?.url || !config?.publishableKey) {
 
   async function addMonthlyControlItem(event) {
     event.preventDefault();
-    const itemName = document.getElementById('control-item-name').value.trim();
-    const controlGroup = document.getElementById('control-item-group').value;
-    const rawAmount = document.getElementById('control-item-amount').value.trim();
+    const form = event.currentTarget;
+    const itemName = form.elements.item_name.value.trim();
+    const controlGroup = form.dataset.controlGroup;
+    const rawAmount = form.elements.amount.value.trim();
     const amountCents = rawAmount ? parseAmount(rawAmount) : null;
     if (!itemName || itemName.length > 120
       || !['income', 'fixed', 'variable', 'additional'].includes(controlGroup)
@@ -2360,7 +2362,7 @@ if (!config?.url || !config?.publishableKey) {
       setMessage('monthly-control-message', 'Não foi possível adicionar o item. Confira se o nome já existe.');
       return;
     }
-    event.target.reset();
+    form.reset();
     setMessage('monthly-control-message', '');
     await loadHouseholdData();
   }

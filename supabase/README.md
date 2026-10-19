@@ -41,7 +41,7 @@ Na tela de entrada, **“Primeiro acesso: já recebi um convite”** solicita um
 
 Sirva a aplicação por HTTPS em hospedagem estática (ou por `localhost` durante o desenvolvimento). O acesso por `file://` não permite service workers e não serve para testar a instalação/offline. A URL e a chave **publishable** em `supabase-config.js` são informações públicas do cliente; a proteção dos dados vem das políticas RLS da migração.
 
-Na tela **Mês**, informe um valor para cada receita ou grupo de despesa e confira subtotais, total e saldo. **Trazer os itens do mês anterior** copia apenas os nomes; os valores ficam em branco para o preenchimento do mês. Expanda cada grupo para ver as compras de cartão incluídas no total e mova uma compra entre fixos, variáveis e adicionais pelo seletor da própria linha.
+Na tela **Mês**, abra **Receitas**, **Gastos fixos**, **Gastos variáveis** ou **Gastos adicionais** e adicione cada item diretamente no grupo com apenas nome e valor, sem selecionar categoria ou subcategoria. Confira subtotais, total e saldo. **Trazer os itens do mês anterior** copia apenas os nomes; os valores ficam em branco para o preenchimento do mês. Os grupos também mostram as compras de cartão incluídas no total; mova uma compra entre fixos, variáveis e adicionais pelo seletor da própria linha.
 
 Em **Fixos → Cartões e faturas**, escolha **Cartão geral — vários cartões na mesma fatura** quando os cartões físicos chegam em uma única fatura. Importe o CSV consolidado; na prévia, é possível identificar quem fez cada compra, classificar a despesa e revisar valores antes de confirmar. O arquivo é lido localmente e não é enviado até a confirmação.
 
