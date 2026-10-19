@@ -35,6 +35,7 @@ const state = {
   passwordSetupPending: false,
   completingPasswordSetup: false,
   sessionRefreshPromise: null,
+  householdDataLoadedAt: 0,
   insightsMonthIndex: 5
 };
 
@@ -77,7 +78,12 @@ if (!config?.url || !config?.publishableKey) {
   document.getElementById('auth-status-card').hidden = false;
 } else {
   const supabase = createClient(config.url, config.publishableKey, {
-    auth: { flowType: 'pkce', autoRefreshToken: true, persistSession: true }
+    auth: {
+      flowType: 'pkce',
+      autoRefreshToken: true,
+      persistSession: true,
+      storage: window.localStorage
+    }
   });
   startApp().catch(error => {
     console.error('Could not start the app:', error);
@@ -93,7 +99,7 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('back-to-login').addEventListener('click', showLoginCard);
     document.getElementById('password-setup-form').addEventListener('submit', setAccountPassword);
     document.getElementById('password-setup-back').addEventListener('click', cancelPasswordSetup);
-    document.getElementById('auth-retry').addEventListener('click', refreshSession);
+    document.getElementById('auth-retry').addEventListener('click', () => refreshSession(true));
     document.getElementById('household-form').addEventListener('submit', createHousehold);
     document.getElementById('invite-form').addEventListener('submit', inviteMember);
     document.getElementById('save-transaction').addEventListener('click', saveEntry);
@@ -159,9 +165,10 @@ if (!config?.url || !config?.publishableKey) {
     window.addEventListener('pageshow', event => {
       if (event.persisted) refreshSession();
     });
+    window.addEventListener('online', () => refreshSession(true));
   }
 
-  async function refreshSession() {
+  async function refreshSession(forceDataRefresh = false) {
     if (state.sessionRefreshPromise || state.authCallbackPending || state.passwordSetupPending) return;
     state.sessionRefreshPromise = (async () => {
       const { data, error } = await supabase.auth.getSession();
@@ -183,6 +190,7 @@ if (!config?.url || !config?.publishableKey) {
         await handleSession(session);
         return;
       }
+      if (!forceDataRefresh && Date.now() - state.householdDataLoadedAt < 60_000) return;
       if (await loadHouseholdData()) {
         authScreen.hidden = true;
         setupScreen.hidden = true;
@@ -207,7 +215,7 @@ if (!config?.url || !config?.publishableKey) {
     appShell.inert = true;
     document.getElementById('auth-status-card').hidden = false;
     document.getElementById('auth-status-title').textContent =
-      canRetry ? 'Sem conexão com a casa' : 'Reconectando';
+      canRetry ? 'Sem conexão com a casa' : 'Carregando sua casa';
     document.getElementById('auth-status-message').textContent = message;
     document.getElementById('auth-retry').hidden = !canRetry;
     document.getElementById('auth-login-card').hidden = true;
@@ -428,7 +436,7 @@ if (!config?.url || !config?.publishableKey) {
     authScreen.hidden = false;
     setupScreen.hidden = true;
     appShell.inert = true;
-    showAuthStatus('Verificando sua sessão e os dados da casa...');
+    showAuthStatus('Abrindo sua casa e carregando os dados...');
     if (isPasswordSetupFlow()) {
       document.getElementById('auth-status-card').hidden = true;
       document.getElementById('auth-login-card').hidden = true;
@@ -594,6 +602,7 @@ if (!config?.url || !config?.publishableKey) {
     renderCardInstallmentForecast();
     renderRecurringItems();
     renderFinancialData();
+    state.householdDataLoadedAt = Date.now();
     return true;
   }
 
