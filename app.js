@@ -717,6 +717,32 @@ if (!config?.url || !config?.publishableKey) {
     await loadHouseholdData();
   }
 
+  function monthlyControlGroupForCardItem(budgetGroup) {
+    if (budgetGroup === 'fixed') return 'fixed';
+    if (budgetGroup === 'emergency') return 'additional';
+    return 'variable';
+  }
+
+  async function updateCardItemControlGroup(item, controlGroup, select) {
+    const budgetGroup = controlGroup === 'fixed'
+      ? 'fixed'
+      : controlGroup === 'additional' ? 'emergency' : 'variable';
+    select.disabled = true;
+    const { error } = await supabase.from('card_statement_items')
+      .update({ budget_group: budgetGroup })
+      .eq('id', item.source_item_id ?? item.id)
+      .eq('household_id', state.membership.household_id);
+    if (error) {
+      select.disabled = false;
+      select.value = monthlyControlGroupForCardItem(item.budget_group);
+      console.error('Could not move card statement item:', error.message);
+      showToast('Não foi possível mover esta compra para outro grupo.');
+      return;
+    }
+    showToast('Compra movida para outro grupo.');
+    await loadHouseholdData();
+  }
+
   async function removeMember(member) {
     if (!window.confirm(`Remover ${member.email} da casa? Essa pessoa perderá o acesso aos dados compartilhados.`)) return;
     const { error } = await supabase
@@ -1882,6 +1908,32 @@ if (!config?.url || !config?.publishableKey) {
   function renderCardInstallmentForecast() {
     const container = document.getElementById('card-installment-forecast');
     container.replaceChildren();
+    const forecast = getCardInstallmentForecast();
+    if (!forecast.length) {
+      appendEmptyState(container, 'Não há parcelas futuras detectadas nas faturas mais recentes.');
+      return;
+    }
+    for (const item of forecast) {
+      const row = document.createElement('div');
+      row.className = 'list-item';
+      const info = document.createElement('div');
+      info.className = 'info';
+      const title = document.createElement('div');
+      title.className = 'title';
+      title.textContent = `${item.dueLabel} · ${item.cardLabel}`;
+      const subtitle = document.createElement('div');
+      subtitle.className = 'subtitle';
+      subtitle.textContent = `${item.title} · parcela ${item.installment_number}/${item.installment_total}`;
+      const amount = document.createElement('div');
+      amount.className = 'amount expense';
+      amount.textContent = formatMoney(item.amount_cents);
+      info.append(title, subtitle);
+      row.append(info, amount);
+      container.append(row);
+    }
+  }
+
+  function getCardInstallmentForecast() {
     const latestStatements = new Map();
     for (const statement of [...state.cardStatements].sort((a, b) =>
       b.due_date.localeCompare(a.due_date))) {
@@ -1898,12 +1950,23 @@ if (!config?.url || !config?.publishableKey) {
         && entry.installment_number
         && entry.installment_total > entry.installment_number)) {
         for (let number = item.installment_number + 1; number <= item.installment_total; number += 1) {
-          const forecastDate = new Date(due.getFullYear(), due.getMonth() + number - item.installment_number, due.getDate());
+          const forecastDate = addMonthsClamped(due, number - item.installment_number);
           forecast.push({
+            id: `${item.id}-${number}`,
+            source_item_id: item.id,
+            statement_id: statement.id,
+            credit_card_id: statement.credit_card_id,
             cardLabel: card?.label ?? 'Cartão',
             title: item.title,
-            amount: Number(item.amount_cents),
-            installment: `${number}/${item.installment_total}`,
+            amount_cents: Number(item.amount_cents),
+            installment_number: number,
+            installment_total: item.installment_total,
+            budget_group: item.budget_group,
+            transaction_type: 'expense',
+            payment_method: 'credit',
+            is_forecast: true,
+            display_date: localDate(forecastDate),
+            transaction_date: localDate(forecastDate),
             month: `${forecastDate.getFullYear()}-${String(forecastDate.getMonth() + 1).padStart(2, '0')}`,
             dueLabel: new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(forecastDate)
           });
@@ -1911,28 +1974,14 @@ if (!config?.url || !config?.publishableKey) {
       }
     }
     forecast.sort((a, b) => a.month.localeCompare(b.month) || a.cardLabel.localeCompare(b.cardLabel));
-    if (!forecast.length) {
-      appendEmptyState(container, 'Não há parcelas futuras detectadas nas faturas mais recentes.');
-      return;
-    }
-    for (const item of forecast) {
-      const row = document.createElement('div');
-      row.className = 'list-item';
-      const info = document.createElement('div');
-      info.className = 'info';
-      const title = document.createElement('div');
-      title.className = 'title';
-      title.textContent = `${item.dueLabel} · ${item.cardLabel}`;
-      const subtitle = document.createElement('div');
-      subtitle.className = 'subtitle';
-      subtitle.textContent = `${item.title} · parcela ${item.installment}`;
-      const amount = document.createElement('div');
-      amount.className = 'amount expense';
-      amount.textContent = formatMoney(item.amount);
-      info.append(title, subtitle);
-      row.append(info, amount);
-      container.append(row);
-    }
+    return forecast;
+  }
+
+  function addMonthsClamped(date, months) {
+    const targetMonth = new Date(date.getFullYear(), date.getMonth() + months, 1);
+    const lastDay = new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0).getDate();
+    targetMonth.setDate(Math.min(date.getDate(), lastDay));
+    return targetMonth;
   }
 
   async function saveEntry() {
@@ -2132,12 +2181,18 @@ if (!config?.url || !config?.publishableKey) {
       additional: { list: 'control-additional-list', total: 'control-additional-total', rows: [] }
     };
     for (const item of currentRows) groups[item.control_group]?.rows.push(item);
+    const cardEntries = financialEntriesForMonth(monthKey).filter(item => item.payment_method === 'credit');
+    for (const item of cardEntries) {
+      const groupKey = monthlyControlGroupForCardItem(item.budget_group);
+      groups[groupKey].cardRows ??= [];
+      groups[groupKey].cardRows.push(item);
+    }
 
     for (const [groupName, group] of Object.entries(groups)) {
       const list = document.getElementById(group.list);
       list.replaceChildren();
       let total = 0;
-      if (!group.rows.length) {
+      if (!group.rows.length && !group.cardRows?.length) {
         appendEmptyState(list, 'Nenhum item neste grupo. Adicione acima ou traga os nomes do mês anterior.');
       }
       for (const item of group.rows) {
@@ -2174,6 +2229,42 @@ if (!config?.url || !config?.publishableKey) {
         row.append(name, amount, actions);
         list.append(row);
       }
+      for (const item of group.cardRows ?? []) {
+        total += Number(item.amount_cents);
+        const row = document.createElement('div');
+        row.className = 'control-card-item';
+        const info = document.createElement('div');
+        const title = document.createElement('div');
+        title.className = 'title';
+        title.textContent = item.title;
+        const subtitle = document.createElement('div');
+        subtitle.className = 'subtitle';
+        const installment = item.installment_number
+          ? ` · Parcela ${item.installment_number}/${item.installment_total}`
+          : '';
+        const forecast = item.is_forecast ? ' · Prevista' : '';
+        subtitle.textContent =
+          `${item.card_label} · ${formatDate(item.display_date)}${installment}${forecast}`;
+        info.append(title, subtitle);
+        const actions = document.createElement('div');
+        actions.className = 'control-card-item-actions';
+        const amount = document.createElement('strong');
+        amount.textContent = formatMoney(item.amount_cents);
+        const move = document.createElement('select');
+        move.className = 'form-input';
+        move.setAttribute('aria-label', `Grupo de ${item.title}`);
+        for (const [value, label] of [
+          ['fixed', 'Fixo'],
+          ['variable', 'Variável'],
+          ['additional', 'Adicional']
+        ]) move.add(new Option(label, value));
+        move.value = monthlyControlGroupForCardItem(item.budget_group);
+        move.addEventListener('change', () =>
+          updateCardItemControlGroup(item, move.value, move));
+        actions.append(amount, move);
+        row.append(info, actions);
+        list.append(row);
+      }
       document.getElementById(group.total).textContent = formatMoney(total);
     }
 
@@ -2197,7 +2288,7 @@ if (!config?.url || !config?.publishableKey) {
       title.textContent = card?.label ?? 'Cartão';
       const subtitle = document.createElement('div');
       subtitle.className = 'subtitle';
-      subtitle.textContent = `${items.length} compras · ${formatDate(statement.due_date)} · ${statement.status === 'paid' ? 'Paga' : 'Em aberto'}`;
+      subtitle.textContent = `${items.length} lançamentos · ${formatDate(statement.due_date)} · ${statement.status === 'paid' ? 'Paga' : 'Em aberto'}`;
       info.append(title, subtitle);
       const actions = document.createElement('div');
       actions.style.display = 'grid';
@@ -2225,9 +2316,11 @@ if (!config?.url || !config?.publishableKey) {
     const manualIncome = groups.income.rows.reduce((sum, item) => sum + Number(item.amount_cents ?? 0), 0);
     const manualExpenses = ['fixed', 'variable', 'additional'].reduce((sum, key) =>
       sum + groups[key].rows.reduce((groupSum, item) => groupSum + Number(item.amount_cents ?? 0), 0), 0);
+    const cardExpenses = ['fixed', 'variable', 'additional'].reduce((sum, key) =>
+      sum + (groups[key].cardRows ?? []).reduce((groupSum, item) => groupSum + Number(item.amount_cents), 0), 0);
     document.getElementById('month-income').textContent = formatMoney(manualIncome);
-    document.getElementById('month-expenses').textContent = formatMoney(manualExpenses + cardTotal);
-    document.getElementById('month-balance').textContent = formatMoney(manualIncome - manualExpenses - cardTotal);
+    document.getElementById('month-expenses').textContent = formatMoney(manualExpenses + cardExpenses);
+    document.getElementById('month-balance').textContent = formatMoney(manualIncome - manualExpenses - cardExpenses);
     document.getElementById('copy-control-items').disabled = currentRows.length > 0;
     document.getElementById('copy-control-items').textContent = currentRows.length
       ? 'Este mês já tem itens cadastrados'
@@ -2416,20 +2509,27 @@ if (!config?.url || !config?.publishableKey) {
   }
 
   function allCardStatementEntries() {
-    return state.cardStatementItems.map(item => {
+    return state.cardStatementItems.filter(item => !isCardPayment(item.title)).map(item => {
       const statement = state.cardStatements.find(row => row.id === item.statement_id);
       const card = state.creditCards.find(row => row.id === statement?.credit_card_id);
       return {
         ...item,
+        source_item_id: item.id,
+        statement_id: statement?.id,
         created_by: null,
         transaction_type: 'expense',
         transaction_date: statement?.due_date ?? item.purchase_date,
         display_date: item.purchase_date,
         title: item.title,
         card_label: card?.label ?? 'Cartão',
-        payment_method: 'credit'
+        payment_method: 'credit',
+        is_forecast: false
       };
     });
+  }
+
+  function isCardPayment(title) {
+    return /^\s*pagamento(?:\s|$)/i.test(title);
   }
 
   function financialEntriesForMonth(monthKey) {
@@ -2452,7 +2552,8 @@ if (!config?.url || !config?.publishableKey) {
       : state.transactions.filter(item => item.transaction_date.startsWith(monthKey));
     const cardEntries = allCardStatementEntries().filter(item =>
       item.transaction_date.startsWith(monthKey));
-    return [...transactions, ...cardEntries];
+    const forecastEntries = getCardInstallmentForecast().filter(item => item.month === monthKey);
+    return [...transactions, ...cardEntries, ...forecastEntries];
   }
 
   function renderReserveSummary() {
