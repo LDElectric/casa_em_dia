@@ -118,7 +118,8 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('reserve-movement-form').addEventListener('submit', saveReserveMovement);
     document.getElementById('credit-card-form').addEventListener('submit', saveCreditCard);
     document.getElementById('cancel-credit-card-edit').addEventListener('click', resetCreditCardForm);
-    document.getElementById('card-statement-scope').addEventListener('change', updateCardScopeFields);
+    const scopeField = document.getElementById('card-statement-scope');
+    if (scopeField) scopeField.addEventListener('change', updateCardScopeFields);
     document.getElementById('card-import-form').addEventListener('submit', prepareCardImport);
     document.getElementById('confirm-card-import').addEventListener('click', confirmCardImport);
     document.getElementById('statement-csv').addEventListener('change', suggestDueDateFromFile);
@@ -1215,21 +1216,13 @@ if (!config?.url || !config?.publishableKey) {
 
   async function saveCreditCard(event) {
     event.preventDefault();
-    const statementScope = document.getElementById('card-statement-scope').value;
     const label = document.getElementById('card-label').value.trim();
     const provider = document.getElementById('card-provider').value.trim();
-    const titularName = document.getElementById('card-titular').value.trim();
-    const cardholderName = statementScope === 'shared'
-      ? 'Vários cartões'
-      : document.getElementById('card-holder').value.trim();
-    const lastFour = statementScope === 'shared' ? '' : document.getElementById('card-last-four').value.trim();
+    const titularName = document.getElementById('card-titular').value.trim() || label;
     const limitValue = document.getElementById('card-credit-limit').value.trim();
     const limit = limitValue ? parseAmount(limitValue) : null;
-    if (!['individual', 'shared'].includes(statementScope)
-      || !label || !provider || !titularName || !cardholderName
-      || (lastFour && !/^\d{4}$/.test(lastFour))
-      || (limitValue && (!Number.isSafeInteger(limit) || limit <= 0))) {
-      setMessage('credit-card-message', 'Confira os campos do cartão. Nunca informe o número completo ou o código de segurança.');
+    if (!label || !provider || (limitValue && (!Number.isSafeInteger(limit) || limit <= 0))) {
+      setMessage('credit-card-message', 'Informe nome e operadora do cartão e, se quiser, o limite do cartão.');
       return;
     }
 
@@ -1238,10 +1231,10 @@ if (!config?.url || !config?.publishableKey) {
       label,
       provider,
       titular_name: titularName,
-      cardholder_name: cardholderName,
-      card_role: statementScope === 'shared' ? 'titular' : document.getElementById('card-role').value,
-      statement_scope: statementScope,
-      last_four: lastFour || null,
+      cardholder_name: titularName,
+      card_role: 'titular',
+      statement_scope: 'individual',
+      last_four: null,
       credit_limit_cents: limit,
       created_by: state.user.id
     };
@@ -1255,7 +1248,7 @@ if (!config?.url || !config?.publishableKey) {
       console.error('Could not save credit card:', error.message);
       setMessage('credit-card-message', isEditing
         ? 'Não foi possível atualizar o cartão. Confira os dados e tente novamente.'
-        : 'Não foi possível cadastrar. Verifique se já existe um cartão com esse apelido.');
+        : 'Não foi possível cadastrar. Verifique se já existe um cartão com esse nome.');
       return;
     }
     event.target.reset();
@@ -1274,13 +1267,9 @@ if (!config?.url || !config?.publishableKey) {
 
   function populateCreditCardForm(card) {
     state.editingCreditCardId = card.id;
-    document.getElementById('card-statement-scope').value = card.statement_scope;
     document.getElementById('card-label').value = card.label;
     document.getElementById('card-provider').value = card.provider;
-    document.getElementById('card-titular').value = card.titular_name;
-    document.getElementById('card-holder').value = card.statement_scope === 'shared' ? 'Vários cartões' : (card.cardholder_name || '');
-    document.getElementById('card-role').value = card.card_role || 'titular';
-    document.getElementById('card-last-four').value = card.last_four || '';
+    document.getElementById('card-titular').value = card.titular_name || '';
     document.getElementById('card-credit-limit').value = card.credit_limit_cents
       ? (Number(card.credit_limit_cents) / 100).toFixed(2).replace('.', ',')
       : '';
@@ -1320,15 +1309,12 @@ if (!config?.url || !config?.publishableKey) {
       const subtitle = document.createElement('div');
       subtitle.className = 'subtitle';
       const ownership = card.statement_scope === 'shared'
-        ? 'Cartão geral · vários cartões na mesma fatura'
-        : card.card_role === 'dependent' ? 'Adicional/dependente' : 'Titular';
-      const digits = card.last_four ? ` · final ${card.last_four}` : '';
+        ? 'Cartão geral'
+        : (card.titular_name ? `Titular: ${card.titular_name}` : 'Cartão individual');
       const limit = card.credit_limit_cents
         ? ` · limite ${formatMoney(Number(card.credit_limit_cents))}`
         : '';
-      subtitle.textContent = card.statement_scope === 'shared'
-        ? `${card.provider} · Titular: ${card.titular_name} · ${ownership}${limit}`
-        : `${card.provider} · Titular: ${card.titular_name} · Usuário: ${card.cardholder_name} · ${ownership}${digits}${limit}`;
+      subtitle.textContent = `${card.provider} · ${ownership}${limit}`;
       info.append(title, subtitle);
       const actions = document.createElement('div');
       actions.style.display = 'flex';
@@ -1361,11 +1347,15 @@ if (!config?.url || !config?.publishableKey) {
   }
 
   function updateCardScopeFields() {
-    const isShared = document.getElementById('card-statement-scope').value === 'shared';
-    for (const id of ['card-holder-wrap', 'card-role-wrap', 'card-last-four-wrap']) {
-      document.getElementById(id).hidden = isShared;
-    }
-    document.getElementById('card-holder').required = !isShared;
+    const form = document.getElementById('credit-card-form');
+    if (!form) return;
+    const scopeField = document.getElementById('card-statement-scope');
+    if (scopeField) scopeField.hidden = true;
+    const oldFields = ['card-holder-wrap', 'card-role-wrap', 'card-last-four-wrap'];
+    oldFields.forEach(id => {
+      const element = document.getElementById(id);
+      if (element) element.hidden = true;
+    });
   }
 
   async function suggestDueDateFromFile(event) {

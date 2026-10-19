@@ -276,7 +276,9 @@
     }
     .sheet.open { transform: translateY(0); }
     .sheet-handle { width: 36px; height: 5px; background: var(--bg-tertiary); border-radius: 3px; margin: 0 auto 16px; }
-    .sheet-title { font-size: 20px; font-weight: 700; text-align: center; margin-bottom: 16px; }
+    .sheet-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+    .sheet-title { font-size: 20px; font-weight: 700; text-align: center; flex: 1; }
+    .sheet-close { border: none; border-radius: 10px; background: var(--bg-secondary); color: var(--text); font-size: 22px; width: 36px; height: 36px; line-height: 1; cursor: pointer; }
 
     .form-group { margin-bottom: 16px; }
     .form-label { display: block; font-size: 13px; font-weight: 500; color: var(--text-tertiary); margin-bottom: 6px; padding-left: 2px; }
@@ -715,17 +717,13 @@
           <div class="section-title">Cartões e faturas</div>
           <div class="info-box">Cadastre um cartão individual ou uma conta geral para vários cartões que chegam em uma única fatura. Importe o CSV consolidado e identifique quem fez cada compra, se quiser. Pagar a fatura não cria uma segunda despesa.</div>
           <form id="credit-card-form" class="card">
-            <div class="form-group"><label class="form-label" for="card-statement-scope">Organização da fatura</label><select class="form-input" id="card-statement-scope"><option value="individual">Um cartão por fatura</option><option value="shared">Cartão geral — vários cartões na mesma fatura</option></select></div>
-            <div class="form-group"><label class="form-label" for="card-label">Apelido</label><input class="form-input" id="card-label" maxlength="80" placeholder="Ex.: Cartão da casa" required /></div>
+            <div class="form-group"><label class="form-label" for="card-label">Nome do cartão</label><input class="form-input" id="card-label" maxlength="80" placeholder="Ex.: Cartão da Maria / Nubank / Santander" required /></div>
             <div class="form-group"><label class="form-label" for="card-provider">Operadora</label><input class="form-input" id="card-provider" maxlength="60" placeholder="Ex.: Nubank" required /></div>
-            <div class="form-group"><label class="form-label" for="card-titular">Titular da conta</label><input class="form-input" id="card-titular" maxlength="80" required /></div>
-            <div class="form-group" id="card-holder-wrap"><label class="form-label" for="card-holder">Pessoa que usa o cartão</label><input class="form-input" id="card-holder" maxlength="80" required /></div>
-            <div class="form-group" id="card-role-wrap"><label class="form-label" for="card-role">Titularidade</label><select class="form-input" id="card-role"><option value="titular">Titular</option><option value="dependent">Adicional/dependente</option></select></div>
-            <div class="form-group" id="card-last-four-wrap"><label class="form-label" for="card-last-four">Últimos 4 dígitos (opcional)</label><input class="form-input" id="card-last-four" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" /></div>
+            <div class="form-group"><label class="form-label" for="card-titular">Titular / responsável (opcional)</label><input class="form-input" id="card-titular" maxlength="80" placeholder="Ex.: Maria" /></div>
             <div class="form-group"><label class="form-label" for="card-credit-limit">Limite do cartão (opcional)</label><div class="amount-input-wrap"><span class="currency">R$</span><input class="form-input" id="card-credit-limit" inputmode="decimal" placeholder="0,00" /></div></div>
             <button class="secondary-btn" type="submit" id="save-credit-card">Cadastrar cartão</button>
             <button class="secondary-btn" type="button" id="cancel-credit-card-edit" hidden>Cancelar edição</button>
-            <p class="helper" id="credit-card-message"></p>
+            <p class="helper" id="credit-card-message">Cadastre um cartão por pessoa. Depois, anexe a fatura do cartão correspondente.</p>
           </form>
           <div class="list" id="credit-card-list"><div class="empty-state">Nenhum cartão cadastrado.</div></div>
           <div class="section-title">Importar fatura CSV</div>
@@ -851,7 +849,10 @@
     <div class="sheet-overlay" id="sheet-overlay" onclick="closeSheet()"></div>
     <div class="sheet" id="sheet">
       <div class="sheet-handle"></div>
-      <div class="sheet-title" id="sheet-title">Nova despesa</div>
+      <div class="sheet-header">
+        <div class="sheet-title" id="sheet-title">Nova despesa</div>
+        <button class="sheet-close" type="button" aria-label="Fechar" onclick="closeSheet()">×</button>
+      </div>
       <div class="form-group">
         <div class="type-toggle">
           <button class="type-btn expense active" id="btn-expense" onclick="setType('expense')">Despesa</button>
