@@ -721,7 +721,8 @@
             <div class="form-group" id="card-role-wrap"><label class="form-label" for="card-role">Titularidade</label><select class="form-input" id="card-role"><option value="titular">Titular</option><option value="dependent">Adicional/dependente</option></select></div>
             <div class="form-group" id="card-last-four-wrap"><label class="form-label" for="card-last-four">Últimos 4 dígitos (opcional)</label><input class="form-input" id="card-last-four" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" /></div>
             <div class="form-group"><label class="form-label" for="card-credit-limit">Limite do cartão (opcional)</label><div class="amount-input-wrap"><span class="currency">R$</span><input class="form-input" id="card-credit-limit" inputmode="decimal" placeholder="0,00" /></div></div>
-            <button class="secondary-btn" type="submit">Cadastrar cartão</button>
+            <button class="secondary-btn" type="submit" id="save-credit-card">Cadastrar cartão</button>
+            <button class="secondary-btn" type="button" id="cancel-credit-card-edit" hidden>Cancelar edição</button>
             <p class="helper" id="credit-card-message"></p>
           </form>
           <div class="list" id="credit-card-list"><div class="empty-state">Nenhum cartão cadastrado.</div></div>

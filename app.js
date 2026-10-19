@@ -29,6 +29,7 @@ const state = {
   pendingHouseholdImport: null,
   editingFinanceCategoryId: null,
   editingBudgetTargetId: null,
+  editingCreditCardId: null,
   authLinkFlow: null,
   authCallbackPending: initialAuthCallback,
   passwordSetupPending: false,
@@ -116,6 +117,7 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('confirm-household-import').addEventListener('click', confirmHouseholdImport);
     document.getElementById('reserve-movement-form').addEventListener('submit', saveReserveMovement);
     document.getElementById('credit-card-form').addEventListener('submit', saveCreditCard);
+    document.getElementById('cancel-credit-card-edit').addEventListener('click', resetCreditCardForm);
     document.getElementById('card-statement-scope').addEventListener('change', updateCardScopeFields);
     document.getElementById('card-import-form').addEventListener('submit', prepareCardImport);
     document.getElementById('confirm-card-import').addEventListener('click', confirmCardImport);
@@ -1230,7 +1232,8 @@ if (!config?.url || !config?.publishableKey) {
       setMessage('credit-card-message', 'Confira os campos do cartão. Nunca informe o número completo ou o código de segurança.');
       return;
     }
-    const { error } = await supabase.from('credit_cards').insert({
+
+    const payload = {
       household_id: state.membership.household_id,
       label,
       provider,
@@ -1241,16 +1244,51 @@ if (!config?.url || !config?.publishableKey) {
       last_four: lastFour || null,
       credit_limit_cents: limit,
       created_by: state.user.id
-    });
+    };
+
+    const isEditing = Boolean(state.editingCreditCardId);
+    const { error } = isEditing
+      ? await supabase.from('credit_cards').update(payload).eq('id', state.editingCreditCardId).eq('household_id', state.membership.household_id)
+      : await supabase.from('credit_cards').insert(payload);
+
     if (error) {
       console.error('Could not save credit card:', error.message);
-      setMessage('credit-card-message', 'Não foi possível cadastrar. Verifique se já existe um cartão com esse apelido.');
+      setMessage('credit-card-message', isEditing
+        ? 'Não foi possível atualizar o cartão. Confira os dados e tente novamente.'
+        : 'Não foi possível cadastrar. Verifique se já existe um cartão com esse apelido.');
       return;
     }
     event.target.reset();
-    updateCardScopeFields();
-    setMessage('credit-card-message', 'Cartão cadastrado.');
+    resetCreditCardForm();
+    setMessage('credit-card-message', isEditing ? 'Cartão atualizado.' : 'Cartão cadastrado.');
     await loadHouseholdData();
+  }
+
+  function resetCreditCardForm() {
+    state.editingCreditCardId = null;
+    document.getElementById('credit-card-form').reset();
+    document.getElementById('save-credit-card').textContent = 'Cadastrar cartão';
+    document.getElementById('cancel-credit-card-edit').hidden = true;
+    updateCardScopeFields();
+  }
+
+  function populateCreditCardForm(card) {
+    state.editingCreditCardId = card.id;
+    document.getElementById('card-statement-scope').value = card.statement_scope;
+    document.getElementById('card-label').value = card.label;
+    document.getElementById('card-provider').value = card.provider;
+    document.getElementById('card-titular').value = card.titular_name;
+    document.getElementById('card-holder').value = card.statement_scope === 'shared' ? 'Vários cartões' : (card.cardholder_name || '');
+    document.getElementById('card-role').value = card.card_role || 'titular';
+    document.getElementById('card-last-four').value = card.last_four || '';
+    document.getElementById('card-credit-limit').value = card.credit_limit_cents
+      ? (Number(card.credit_limit_cents) / 100).toFixed(2).replace('.', ',')
+      : '';
+    updateCardScopeFields();
+    document.getElementById('save-credit-card').textContent = 'Salvar alterações';
+    document.getElementById('cancel-credit-card-edit').hidden = false;
+    document.getElementById('card-label').focus();
+    window.scrollTo({ top: document.getElementById('credit-card-section').offsetTop - 18, behavior: 'smooth' });
   }
 
   function renderCreditCards() {
@@ -1271,6 +1309,9 @@ if (!config?.url || !config?.publishableKey) {
       entrySelect.add(new Option(card.label, card.id));
       const row = document.createElement('div');
       row.className = 'list-item';
+      row.style.display = 'flex';
+      row.style.flexDirection = 'column';
+      row.style.gap = '8px';
       const info = document.createElement('div');
       info.className = 'info';
       const title = document.createElement('div');
@@ -1289,7 +1330,27 @@ if (!config?.url || !config?.publishableKey) {
         ? `${card.provider} · Titular: ${card.titular_name} · ${ownership}${limit}`
         : `${card.provider} · Titular: ${card.titular_name} · Usuário: ${card.cardholder_name} · ${ownership}${digits}${limit}`;
       info.append(title, subtitle);
-      row.append(info);
+      const actions = document.createElement('div');
+      actions.style.display = 'flex';
+      actions.style.gap = '8px';
+      actions.style.flexWrap = 'wrap';
+      const editButton = document.createElement('button');
+      editButton.type = 'button';
+      editButton.className = 'secondary-btn';
+      editButton.textContent = 'Editar';
+      editButton.addEventListener('click', () => populateCreditCardForm(card));
+      const importButton = document.createElement('button');
+      importButton.type = 'button';
+      importButton.className = 'secondary-btn';
+      importButton.textContent = 'Lançar fatura';
+      importButton.addEventListener('click', () => {
+        document.getElementById('import-card').value = card.id;
+        document.getElementById('statement-due-date').value ||= localDate(new Date());
+        document.getElementById('card-import-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        document.getElementById('statement-csv').focus();
+      });
+      actions.append(editButton, importButton);
+      row.append(info, actions);
       container.append(row);
     }
     importSelect.value = activeCards.some(card => card.id === previousImport) ? previousImport : '';
