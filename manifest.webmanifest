@@ -4,7 +4,7 @@
   "short_name": "Casa em Dia",
   "description": "Organize as finanças da sua casa em um só lugar.",
   "lang": "pt-BR",
-  "start_url": "./",
+  "start_url": "./casa-em-dia-prototype.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

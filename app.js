@@ -496,7 +496,6 @@ if (!config?.url || !config?.publishableKey) {
   async function loadHouseholdData() {
     if (!state.membership || !state.user) return false;
     const householdId = state.membership.household_id;
-    if (!await ensureDefaultFinanceCategories()) return false;
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setDate(1);
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
@@ -578,10 +577,43 @@ if (!config?.url || !config?.publishableKey) {
       }
     }
 
+    let financeCategories = categoriesResult.data;
+    if (!financeCategories.length) {
+      const defaults = DEFAULT_FINANCE_CATEGORIES.map(([transaction_type, category, subcategory, budget_group]) => ({
+        household_id: householdId,
+        transaction_type,
+        category,
+        subcategory,
+        budget_group,
+        created_by: state.user.id
+      }));
+      const { error: seedError } = await supabase.from('finance_categories').upsert(defaults, {
+        onConflict: 'household_id,transaction_type,category,subcategory',
+        ignoreDuplicates: true
+      });
+      if (seedError) {
+        console.error('Could not seed household categories:', seedError.message);
+        showToast('Não foi possível preparar as categorias iniciais.');
+        return false;
+      }
+      const { data, error: reloadError } = await supabase.from('finance_categories')
+        .select('id, transaction_type, category, subcategory, budget_group')
+        .eq('household_id', householdId)
+        .order('transaction_type')
+        .order('category')
+        .order('subcategory');
+      if (reloadError) {
+        console.error('Could not reload household categories:', reloadError.message);
+        showToast('Não foi possível carregar as categorias iniciais.');
+        return false;
+      }
+      financeCategories = data;
+    }
+
     state.members = membersResult.data;
     state.transactions = transactionsResult.data;
     state.recurringItems = recurringResult.data;
-    state.financeCategories = categoriesResult.data;
+    state.financeCategories = financeCategories;
     state.budgetTargets = budgetTargetsResult.data;
     state.reserveMovements = reserveMovementsResult.data;
     state.creditCards = cardsResult.data;
@@ -603,39 +635,6 @@ if (!config?.url || !config?.publishableKey) {
     renderRecurringItems();
     renderFinancialData();
     state.householdDataLoadedAt = Date.now();
-    return true;
-  }
-
-  async function ensureDefaultFinanceCategories() {
-    const householdId = state.membership.household_id;
-    const { count, error: countError } = await supabase
-      .from('finance_categories')
-      .select('id', { count: 'exact', head: true })
-      .eq('household_id', householdId);
-    if (countError) {
-      console.error('Could not inspect household categories:', countError.message);
-      showToast('Não foi possível carregar as categorias. Confira a migração do banco.');
-      return false;
-    }
-    if (count > 0) return true;
-
-    const defaults = DEFAULT_FINANCE_CATEGORIES.map(([transaction_type, category, subcategory, budget_group]) => ({
-      household_id: householdId,
-      transaction_type,
-      category,
-      subcategory,
-      budget_group,
-      created_by: state.user.id
-    }));
-    const { error } = await supabase.from('finance_categories').upsert(defaults, {
-      onConflict: 'household_id,transaction_type,category,subcategory',
-      ignoreDuplicates: true
-    });
-    if (error) {
-      console.error('Could not seed household categories:', error.message);
-      showToast('Não foi possível preparar as categorias iniciais.');
-      return false;
-    }
     return true;
   }
 
