@@ -77,6 +77,24 @@ export function parseCardOfx(text) {
   return rows;
 }
 
+export function getStatementReferenceMonth(statement) {
+  if (statement?.reference_month) return statement.reference_month;
+  const rawDate = statement?.due_date || '';
+  const match = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return rawDate.slice(0, 7);
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  // Faturas com vencimento até o dia 15 são referentes às despesas do mês anterior (regime de competência).
+  // Exemplo: Vencimento 07/11 -> Despesas de Outubro (2026-10).
+  // Exemplo: Vencimento 07/01 -> Despesas de Dezembro (2026-12).
+  if (day <= 15) {
+    const prevDate = new Date(year, month - 2, 1);
+    return `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+  }
+  return `${match[1]}-${match[2]}`;
+}
+
 export function calculateMonthlyCashFlow(entries, statements, statementItems, monthKey) {
   const incomeEntries = entries
     .filter(item => item.transaction_type === 'income');
@@ -88,7 +106,7 @@ export function calculateMonthlyCashFlow(entries, statements, statementItems, mo
   const incomeVariable = income - incomeFixed;
 
   // Compras no cartão são informação de categoria; o caixa usa o total da
-  // fatura com vencimento no mês, não a soma das compras.
+  // fatura do mês de competência, não a soma das compras.
   const regularExpenses = entries.filter(item => item.transaction_type === 'expense'
     && !item.source_item_id
     && !item.is_forecast
@@ -101,7 +119,7 @@ export function calculateMonthlyCashFlow(entries, statements, statementItems, mo
     .reduce((sum, item) => sum + Number(item.amount_cents), 0);
 
   const statementCardMonths = new Set(statements
-    .filter(statement => statement.due_date.startsWith(monthKey))
+    .filter(statement => getStatementReferenceMonth(statement) === monthKey)
     .map(statement => statement.credit_card_id));
   const forecastExpenses = entries
     .filter(item => item.transaction_type === 'expense'
@@ -109,7 +127,7 @@ export function calculateMonthlyCashFlow(entries, statements, statementItems, mo
       && (!item.credit_card_id || !statementCardMonths.has(item.credit_card_id)))
     .reduce((sum, item) => sum + Number(item.amount_cents), 0);
   const statementExpenses = statements
-    .filter(statement => statement.due_date.startsWith(monthKey))
+    .filter(statement => getStatementReferenceMonth(statement) === monthKey)
     .reduce((sum, statement) => {
       if (statement.statement_total_cents != null) {
         return sum + Number(statement.statement_total_cents);

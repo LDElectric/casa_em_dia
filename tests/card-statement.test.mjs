@@ -122,7 +122,8 @@ test('rejects invalid OFX transaction values', () => {
   assert.throws(() => parseCardOfx('<OFX></OFX>'), /Não encontrei transações OFX/);
 });
 
-test('counts statement totals in the due month without adding imported purchases twice', () => {
+// Fatura com vencimento 07/11 (dia <= 15) tem competência em outubro (2026-10).
+test('counts statement totals in the reference month (competencia) without adding imported purchases twice', () => {
   const result = calculateMonthlyCashFlow([
     { transaction_type: 'income', amount_cents: 850000, amount_behavior: 'fixed' },
     { transaction_type: 'expense', amount_cents: 100000, amount_behavior: 'fixed' },
@@ -131,14 +132,14 @@ test('counts statement totals in the due month without adding imported purchases
     { transaction_type: 'expense', amount_cents: 40000, is_forecast: true }
   ], [{
     id: 'statement-1',
-    due_date: '2026-11-07',
+    due_date: '2026-11-07',       // vencimento em novembro
     statement_total_cents: 350000
   }], [{
     id: 'item-1',
     statement_id: 'statement-1',
     title: 'Compra',
     amount_cents: 350000
-  }], '2026-11');
+  }], '2026-10');  // mês de competência = outubro
 
   assert.equal(result.income, 850000);
   assert.equal(result.incomeFixed, 850000);
@@ -148,17 +149,25 @@ test('counts statement totals in the due month without adding imported purchases
   assert.equal(result.cardExpenses, 350000);
   assert.equal(result.forecastExpenses, 40000);
   assert.equal(result.expenses, 490000);
+
+  // No mês de novembro (vencimento), a fatura NÃO aparece.
+  const novResult = calculateMonthlyCashFlow([{ transaction_type: 'expense', amount_cents: 40000, is_forecast: true }],
+    [{ id: 'statement-1', due_date: '2026-11-07', statement_total_cents: 350000 }],
+    [{ id: 'item-1', statement_id: 'statement-1', title: 'Compra', amount_cents: 350000 }],
+    '2026-11');
+  assert.equal(novResult.cardExpenses, 0);
 });
 
+// Fatura com vencimento 07/11 (dia <= 15) tem competência em outubro.
 test('falls back to statement purchase rows when an invoice has no declared total', () => {
   const result = calculateMonthlyCashFlow([], [{
     id: 'statement-1',
-    due_date: '2026-11-07',
+    due_date: '2026-11-07',   // vencimento em novembro
     statement_total_cents: null
   }], [
     { statement_id: 'statement-1', title: 'Compra', amount_cents: 25000 },
     { statement_id: 'statement-1', title: 'Pagamento recebido', amount_cents: -25000 }
-  ], '2026-11');
+  ], '2026-10');  // mês de competência = outubro
 
   assert.equal(result.income, 0);
   assert.equal(result.expenses, 25000);
@@ -176,7 +185,8 @@ test('splits fixed and variable income for the monthly summary', () => {
   assert.equal(result.incomeVariable, 120000);
 });
 
-test('does not add forecast installments when the card already has a statement in that month', () => {
+// Fatura com vencimento 07/12 (dia <= 15) tem competência em novembro (2026-11).
+test('does not add forecast installments when the card already has a statement in that reference month', () => {
   const result = calculateMonthlyCashFlow([{
     transaction_type: 'expense',
     amount_cents: 100000,
@@ -185,13 +195,23 @@ test('does not add forecast installments when the card already has a statement i
   }], [{
     id: 'statement-1',
     credit_card_id: 'card-1',
-    due_date: '2026-12-07',
+    due_date: '2026-12-07',   // vencimento em dezembro
     statement_total_cents: 120000
-  }], [], '2026-12');
+  }], [], '2026-11');  // mês de competência = novembro
 
   assert.equal(result.forecastExpenses, 0);
   assert.equal(result.cardExpenses, 120000);
   assert.equal(result.expenses, 120000);
+
+  // Em dezembro (mês do vencimento), a fatura não aparece mais.
+  const decResult = calculateMonthlyCashFlow([{
+    transaction_type: 'expense', amount_cents: 100000, is_forecast: true, credit_card_id: 'card-1'
+  }], [{
+    id: 'statement-1', credit_card_id: 'card-1', due_date: '2026-12-07', statement_total_cents: 120000
+  }], [], '2026-12');
+  assert.equal(decResult.cardExpenses, 0);
+  // A previsão ainda conta pois não há fatura com competência em dezembro.
+  assert.equal(decResult.forecastExpenses, 100000);
 });
 
 test('reads the open statement total from the OFX ledger balance and period start', () => {

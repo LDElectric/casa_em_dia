@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
   calculateMonthlyCashFlow,
   classifyCardPurchase,
+  getStatementReferenceMonth,
   parseCardOfx,
   parseCardOfxPeriod,
   parseCardPdfLines,
@@ -717,6 +718,26 @@ if (!config?.url || !config?.publishableKey) {
     renderMonthlyControl();
     renderFinancialData();
     state.householdDataLoadedAt = Date.now();
+    return true;
+  }
+
+  /**
+   * Recarrega apenas os itens de controle mensal e re-renderiza as seções
+   * dependentes. Muito mais rápido que loadHouseholdData() para operações
+   * de add/edit/delete no quadro de controle.
+   */
+  async function refreshControlState() {
+    const householdId = state.membership?.household_id;
+    if (!householdId) return false;
+    const { data: monthlyItems, error } = await queryMonthlyControlItems(householdId);
+    if (error || !monthlyItems) {
+      console.warn('Could not refresh monthly control items:', error?.message);
+      showToast('Não foi possível atualizar o controle mensal.');
+      return false;
+    }
+    state.monthlyControlItems = monthlyItems;
+    renderMonthlyControl();
+    renderFinancialData();
     return true;
   }
 
@@ -3037,7 +3058,7 @@ if (!config?.url || !config?.publishableKey) {
       }
       form.reset();
       setMessage('monthly-control-message', 'Modelo mensal salvo; ele aparecerá automaticamente nos próximos meses.');
-      await loadHouseholdData();
+      await refreshControlState();
       return;
     }
     const payload = {
@@ -3063,7 +3084,7 @@ if (!config?.url || !config?.publishableKey) {
     }
     form.reset();
     setMessage('monthly-control-message', '');
-    await loadHouseholdData();
+    await refreshControlState();
   }
 
   async function updateMonthlyControlItem(item, itemName, rawAmount, button) {
@@ -3111,7 +3132,7 @@ if (!config?.url || !config?.publishableKey) {
       return;
     }
     showToast('Valor mensal salvo.');
-    await loadHouseholdData();
+    await refreshControlState();
   }
 
   async function deleteMonthlyControlItem(item) {
@@ -3134,7 +3155,7 @@ if (!config?.url || !config?.publishableKey) {
     if (recurring) {
       showToast('Item removido somente deste mês; a recorrência continua nos próximos.');
     }
-    await loadHouseholdData();
+    await refreshControlState();
   }
 
   async function copyPreviousMonthItems() {
@@ -3193,7 +3214,7 @@ if (!config?.url || !config?.publishableKey) {
       return;
     }
     showToast(`${rows.length} itens copiados; os valores ficaram em branco para preencher.`);
-    await loadHouseholdData();
+    await refreshControlState();
   }
 
   function renderFinancialData() {
@@ -3249,13 +3270,17 @@ if (!config?.url || !config?.publishableKey) {
     return state.cardStatementItems.filter(item => !isCardPayment(item.title)).map(item => {
       const statement = state.cardStatements.find(row => row.id === item.statement_id);
       const card = state.creditCards.find(row => row.id === statement?.credit_card_id);
-      const dueMonth = statement?.due_date ? statement.due_date.slice(0, 7) : item.purchase_date.slice(0, 7);
+      // Usa o mês de COMPETÊNCIA da fatura (não o mês do vencimento).
+      // Ex.: fatura com vencimento 07/11 → competência outubro (2026-10).
+      const referenceMonth = statement
+        ? getStatementReferenceMonth(statement)
+        : item.purchase_date.slice(0, 7);
       return {
         ...item,
         source_item_id: item.id,
         statement_id: statement?.id,
         statement_due_date: statement?.due_date,
-        due_month: dueMonth,
+        due_month: referenceMonth,
         created_by: statement?.imported_by ?? null,
         transaction_type: 'expense',
         transaction_date: item.purchase_date,
@@ -3313,10 +3338,12 @@ if (!config?.url || !config?.publishableKey) {
           : item.budget_group === 'fixed' ? 'fixed' : 'variable'
       }));
     const transactions = [...monthlyEntries, ...transactionEntries];
+    // Filtra compras de cartão pelo mês de COMPETÊNCIA da fatura.
     const cardEntries = allCardStatementEntries().filter(item =>
       (item.due_month ?? item.transaction_date.slice(0, 7)) === monthKey);
+    // Para previsão de parcelas: exclui cartões que já têm fatura de competência neste mês.
     const statementCardMonths = new Set(state.cardStatements
-      .filter(statement => statement.due_date.startsWith(monthKey))
+      .filter(statement => getStatementReferenceMonth(statement) === monthKey)
       .map(statement => statement.credit_card_id));
     const forecastEntries = getCardInstallmentForecast().filter(item =>
       item.month === monthKey
