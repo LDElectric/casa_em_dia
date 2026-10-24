@@ -25,7 +25,7 @@ Deno.serve(async (request: Request) => {
     return jsonResponse({ error: "A URL do app não está configurada corretamente." }, 500, preflightHeaders);
   }
   const inviteRedirect = new URL(
-    "casa-em-dia-prototype.html",
+    "casa-em-dia.html",
     appSiteUrl.endsWith("/") ? appSiteUrl : `${appSiteUrl}/`
   );
   inviteRedirect.searchParams.set("mode", "set-password");

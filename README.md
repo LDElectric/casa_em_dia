@@ -17,6 +17,8 @@ O projeto não depende de Workers pagos nem publica arquivos privados do banco. 
 
 O acesso é por e-mail e senha, sem cadastro público. O responsável adiciona membros pelo e-mail; cada pessoa recebe um convite e define sua própria senha. Convites e redefinições de senha usam callbacks que precisam estar permitidos na configuração de URLs do Supabase; veja [`supabase/README.md`](./supabase/README.md).
 
+O controle mensal suporta receitas e despesas recorrentes, com valores variáveis registrados separadamente em cada mês e cada receita marcada como fixa ou variável. Faturas podem ser importadas por CSV, PDF com texto selecionável ou OFX; o total em aberto conta como saída no mês do vencimento, enquanto as compras classificadas alimentam os grupos e insights sem duplicar o caixa. A migração mais recente do Supabase deve ser aplicada antes de usar essa interface; veja [`supabase/README.md`](./supabase/README.md).
+
 ## Alternativa: GitHub Pages
 
 O workflow `.github/workflows/deploy-github-pages.yml` pode ser executado manualmente após habilitar o Pages. No GitHub, abra **Settings → Pages** e escolha **GitHub Actions** como origem da publicação; depois, em **Actions**, execute **Deploy PWA to GitHub Pages**. A URL será `https://ldelectric.github.io/casa_em_dia/`.

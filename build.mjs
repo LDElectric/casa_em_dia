@@ -5,8 +5,9 @@ const root = import.meta.dirname;
 const output = resolve(root, 'dist');
 const publishFiles = [
   'index.html',
-  'casa-em-dia-prototype.html',
+  'casa-em-dia.html',
   'app.js',
+  'card-statement.mjs',
   'supabase-config.js',
   'manifest.webmanifest',
   'icon.svg',

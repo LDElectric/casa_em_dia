@@ -1,4 +1,12 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  calculateMonthlyCashFlow,
+  classifyCardPurchase,
+  parseCardOfx,
+  parseCardOfxPeriod,
+  parseCardPdfLines,
+  parseCardPdfTotal
+} from './card-statement.mjs';
 
 const config = window.SUPABASE_CONFIG;
 const authScreen = document.getElementById('auth-screen');
@@ -28,6 +36,8 @@ const state = {
   monthlyControlItems: [],
   controlMonthKey: null,
   pendingCardImport: null,
+  selectedImportCardId: null,
+  pendingPdfLibrary: null,
   pendingHouseholdImport: null,
   editingFinanceCategoryId: null,
   editingBudgetTargetId: null,
@@ -89,8 +99,10 @@ if (!config?.url || !config?.publishableKey) {
   });
   startApp().catch(error => {
     console.error('Could not start the app:', error);
-    document.getElementById('auth-message').textContent =
-      'Não foi possível iniciar. Verifique a conexão e a configuração do Supabase.';
+    showAuthStatus(
+      'Ocorreu um erro ao abrir os dados da casa. Tente novamente; se persistir, atualize a página.',
+      true
+    );
   });
 
   async function startApp() {
@@ -108,6 +120,7 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('entry-category').addEventListener('change', renderSubcategoryOptions);
     document.getElementById('entry-subcategory').addEventListener('change', setDefaultBudgetGroup);
     document.getElementById('payment-method').addEventListener('change', updatePaymentFields);
+    document.getElementById('entry-variable-amount').addEventListener('change', updateEntryAmountLabel);
     window.addEventListener('entry-type-changed', () => {
       renderEntryCategoryOptions();
       updatePaymentFields();
@@ -130,15 +143,28 @@ if (!config?.url || !config?.publishableKey) {
     if (scopeField) scopeField.addEventListener('change', updateCardScopeFields);
     document.getElementById('card-import-form').addEventListener('submit', prepareCardImport);
     document.getElementById('confirm-card-import').addEventListener('click', confirmCardImport);
-    document.querySelectorAll('.control-quick-add').forEach(form =>
-      form.addEventListener('submit', addMonthlyControlItem));
+    document.getElementById('close-card-import').addEventListener('click', () =>
+      document.getElementById('card-import-dialog').close());
+    document.querySelectorAll('.control-quick-add').forEach(form => {
+      form.addEventListener('submit', addMonthlyControlItem);
+      form.elements.repeat_monthly.addEventListener('change', () => {
+        if (!form.elements.repeat_monthly.checked) form.elements.variable_amount.checked = false;
+      });
+    });
     document.getElementById('copy-control-items').addEventListener('click', copyPreviousMonthItems);
-    window.addEventListener('control-month-changed', event => {
+    window.addEventListener('control-month-changed', async event => {
       state.controlMonthKey = event.detail.monthKey;
-      renderMonthlyControl();
-      renderFinancialData();
+      const loaded = await loadHouseholdData();
+      if (!loaded) showToast('Não foi possível preparar os valores recorrentes deste mês.');
     });
     document.getElementById('statement-csv').addEventListener('change', suggestDueDateFromFile);
+    document.getElementById('card-import-dialog').addEventListener('close', () => {
+      state.selectedImportCardId = null;
+      state.pendingCardImport = null;
+      document.getElementById('card-import-form').reset();
+      document.getElementById('card-import-preview').hidden = true;
+      document.getElementById('confirm-card-import').disabled = true;
+    });
     document.getElementById('open-invite').addEventListener('click', openInviteDialog);
     document.getElementById('close-invite').addEventListener('click', closeInviteDialog);
     document.getElementById('signout').addEventListener('click', signOut);
@@ -167,7 +193,10 @@ if (!config?.url || !config?.publishableKey) {
       queueMicrotask(() => {
         handleSession(session).catch(error => {
           console.error('Could not initialize authenticated app:', error);
-          showToast('Não foi possível carregar os dados da casa. Tente novamente.');
+          showAuthStatus(
+            'Ocorreu um erro ao abrir os dados da casa. Tente novamente; se persistir, atualize a página.',
+            true
+          );
         });
       });
     });
@@ -535,7 +564,7 @@ if (!config?.url || !config?.publishableKey) {
         .gte('transaction_date', localDate(sixMonthsAgo))
         .order('transaction_date', { ascending: false }),
       supabase.from('recurring_items')
-        .select('id, title, transaction_type, category, subcategory, budget_group, amount_cents, frequency, day_of_month, month_of_year')
+        .select('id, title, transaction_type, category, subcategory, budget_group, amount_cents, amount_behavior, frequency, day_of_month, month_of_year, starts_month, active')
         .eq('household_id', householdId)
         .order('title'),
       supabase.from('households')
@@ -562,7 +591,7 @@ if (!config?.url || !config?.publishableKey) {
         .eq('household_id', householdId)
         .order('label'),
       supabase.from('card_statements')
-        .select('id, credit_card_id, due_date, status, paid_at, source_filename, imported_at')
+        .select('id, credit_card_id, due_date, status, paid_at, source_filename, imported_at, imported_by, statement_total_cents')
         .eq('household_id', householdId)
         .order('due_date', { ascending: false }),
       supabase.from('card_statement_items')
@@ -570,7 +599,7 @@ if (!config?.url || !config?.publishableKey) {
         .eq('household_id', householdId)
         .order('purchase_date', { ascending: false }),
       supabase.from('monthly_control_items')
-        .select('id, month_start, item_name, transaction_type, control_group, amount_cents')
+        .select('id, month_start, item_name, transaction_type, control_group, amount_cents, recurring_item_id, is_skipped, income_behavior')
         .eq('household_id', householdId)
         .order('month_start', { ascending: false })
         .order('control_group')
@@ -640,6 +669,26 @@ if (!config?.url || !config?.publishableKey) {
     state.cardStatements = statementsResult.data;
     state.cardStatementItems = statementItemsResult.data;
     state.monthlyControlItems = monthlyControlResult.data;
+    const { error: ensureError } = await supabase.rpc('ensure_monthly_control_items', {
+      target_month_start: state.controlMonthKey
+    });
+    if (ensureError) {
+      console.error('Could not prepare recurring items for the selected month:', ensureError.message);
+      showToast('Não foi possível gerar os itens recorrentes. Aplique a migração mensal recorrente do Supabase.');
+      return false;
+    }
+    const { data: monthlyItems, error: monthlyItemsError } = await supabase.from('monthly_control_items')
+      .select('id, month_start, item_name, transaction_type, control_group, amount_cents, recurring_item_id, is_skipped, income_behavior')
+      .eq('household_id', householdId)
+      .order('month_start', { ascending: false })
+      .order('control_group')
+      .order('item_name');
+    if (monthlyItemsError) {
+      console.error('Could not reload recurring monthly items:', monthlyItemsError.message);
+      showToast('Não foi possível atualizar os itens mensais.');
+      return false;
+    }
+    state.monthlyControlItems = monthlyItems;
     document.getElementById('control-household-subtitle').textContent =
       `${householdResult.data.name} · ${state.user.email ?? ''}`;
     document.getElementById('settings-household-name').textContent = householdResult.data.name;
@@ -729,10 +778,15 @@ if (!config?.url || !config?.publishableKey) {
       ? 'fixed'
       : controlGroup === 'additional' ? 'emergency' : 'variable';
     select.disabled = true;
-    const { error } = await supabase.from('card_statement_items')
-      .update({ budget_group: budgetGroup })
-      .eq('id', item.source_item_id ?? item.id)
-      .eq('household_id', state.membership.household_id);
+    const { error } = item.source_transaction_id
+      ? await supabase.from('transactions')
+        .update({ budget_group: budgetGroup })
+        .eq('id', item.source_transaction_id)
+        .eq('household_id', state.membership.household_id)
+      : await supabase.from('card_statement_items')
+        .update({ budget_group: budgetGroup })
+        .eq('id', item.source_item_id ?? item.id)
+        .eq('household_id', state.membership.household_id);
     if (error) {
       select.disabled = false;
       select.value = monthlyControlGroupForCardItem(item.budget_group);
@@ -1336,21 +1390,35 @@ if (!config?.url || !config?.publishableKey) {
     window.scrollTo({ top: document.getElementById('credit-card-section').offsetTop - 18, behavior: 'smooth' });
   }
 
+  function openCardImport(creditCardId = '') {
+    window.showScreen('home');
+    const group = document.querySelector('.credit-card-group');
+    group.open = true;
+    const card = state.creditCards.find(item => item.id === creditCardId && item.active);
+    if (!card) {
+      showToast('Não foi possível encontrar este cartão. Atualize a página e tente novamente.');
+      return;
+    }
+    state.selectedImportCardId = card.id;
+    document.getElementById('card-import-card-label').textContent =
+      `${card.label} · ${card.provider}`;
+    const dialog = document.getElementById('card-import-dialog');
+    if (!dialog.open) dialog.showModal();
+    document.getElementById('card-import-preview').hidden = true;
+    document.getElementById('card-import-form').reset();
+    document.getElementById('card-import-message').textContent = '';
+    document.getElementById('confirm-card-import').disabled = true;
+    window.setTimeout(() => document.getElementById('statement-csv').focus({ preventScroll: true }), 200);
+  }
+
   function renderCreditCards() {
     const container = document.getElementById('credit-card-list');
-    const importSelect = document.getElementById('import-card');
     const entrySelect = document.getElementById('entry-credit-card');
-    const previousImport = importSelect.value;
     const previousEntry = entrySelect.value;
     container.replaceChildren();
-    importSelect.replaceChildren(new Option('Selecione o cartão', ''));
     entrySelect.replaceChildren(new Option('Selecione o cartão', ''));
     const activeCards = state.creditCards.filter(card => card.active);
     for (const card of activeCards) {
-      importSelect.add(new Option(
-        `${card.label}${card.statement_scope === 'shared' ? ' · fatura compartilhada' : ''}`,
-        card.id
-      ));
       entrySelect.add(new Option(card.label, card.id));
       const row = document.createElement('div');
       row.className = 'list-item';
@@ -1384,18 +1452,12 @@ if (!config?.url || !config?.publishableKey) {
       const importButton = document.createElement('button');
       importButton.type = 'button';
       importButton.className = 'secondary-btn';
-      importButton.textContent = 'Lançar fatura';
-      importButton.addEventListener('click', () => {
-        document.getElementById('import-card').value = card.id;
-        document.getElementById('statement-due-date').value ||= localDate(new Date());
-        document.getElementById('card-import-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
-        document.getElementById('statement-csv').focus();
-      });
+      importButton.textContent = 'Importar fatura';
+      importButton.addEventListener('click', () => openCardImport(card.id));
       actions.append(editButton, importButton);
       row.append(info, actions);
       container.append(row);
     }
-    importSelect.value = activeCards.some(card => card.id === previousImport) ? previousImport : '';
     entrySelect.value = activeCards.some(card => card.id === previousEntry) ? previousEntry : '';
     if (!activeCards.length) appendEmptyState(container, 'Nenhum cartão cadastrado.');
     updatePaymentFields();
@@ -1427,30 +1489,49 @@ if (!config?.url || !config?.publishableKey) {
   async function prepareCardImport(event) {
     event.preventDefault();
     const file = document.getElementById('statement-csv').files?.[0];
-    const creditCardId = document.getElementById('import-card').value;
+    const creditCardId = state.selectedImportCardId;
     const dueDate = document.getElementById('statement-due-date').value;
     const preview = document.getElementById('card-import-preview');
     preview.hidden = true;
     state.pendingCardImport = null;
     document.getElementById('confirm-card-import').disabled = true;
     if (!file || !creditCardId || !parseIsoDate(dueDate)) {
-      setMessage('card-import-message', 'Selecione o cartão, informe o vencimento e escolha um CSV.');
+      setMessage('card-import-message', 'Selecione o cartão, informe o vencimento e escolha um CSV, PDF ou OFX.');
       return;
     }
-    if (file.size > 2 * 1024 * 1024) {
-      setMessage('card-import-message', 'O CSV excede o limite de 2 MB.');
+    const isPdf = file.name.toLocaleLowerCase('pt-BR').endsWith('.pdf');
+    const isOfx = file.name.toLocaleLowerCase('pt-BR').endsWith('.ofx');
+    const fileType = isPdf ? 'PDF' : isOfx ? 'OFX' : 'CSV';
+    if (file.size > (isPdf ? 10 : 2) * 1024 * 1024) {
+      setMessage('card-import-message', `O ${fileType} excede o limite de ${isPdf ? '10' : '2'} MB.`);
       return;
     }
 
-    setMessage('card-import-message', 'Lendo o arquivo localmente e preparando a prévia...');
+    setMessage('card-import-message', `Lendo o ${fileType} localmente e preparando a prévia...`);
     try {
-      const parsedRows = parseCardCsv(await file.text());
-      if (!parsedRows.length) throw new Error('O CSV não contém compras para importar.');
+      let parsedRows;
+      let pdfStatementTotal = null;
+      let ofxPeriod = null;
+      let totalSource = 'rows';
+      if (isPdf) {
+        const lines = await extractCardPdfLines(file);
+        parsedRows = parseCardPdfLines(lines, dueDate);
+        pdfStatementTotal = parseCardPdfTotal(lines);
+        if (pdfStatementTotal != null) totalSource = 'pdf';
+      } else if (isOfx) {
+        const ofxText = await readCardOfxFile(file);
+        parsedRows = parseCardOfx(ofxText);
+        ofxPeriod = parseCardOfxPeriod(ofxText);
+      } else {
+        parsedRows = parseCardCsv(await file.text());
+      }
+      if (!parsedRows.length) throw new Error('O arquivo não contém compras para importar.');
+      if (parsedRows.length > 500) throw new Error('A fatura excede o limite de 500 lançamentos.');
       const rowsWithKeys = await addStatementRowKeys(parsedRows);
       const fingerprint = await sha256(rowsWithKeys.map(row => row.source_key).sort().join('\n'));
       const { data: existingStatement, error: statementError } = await supabase
         .from('card_statements')
-        .select('id, status, source_fingerprint')
+        .select('id, status, source_fingerprint, statement_total_cents')
         .eq('household_id', state.membership.household_id)
         .eq('credit_card_id', creditCardId)
         .eq('due_date', dueDate)
@@ -1467,17 +1548,59 @@ if (!config?.url || !config?.publishableKey) {
         existingItems = data;
       }
       const categoryBySource = new Map(existingItems.map(item => [item.source_key, item]));
+      const netRowsTotal = rowsWithKeys.reduce((sum, row) => sum + Number(row.amount_cents), 0);
+      const previousTotals = new Set(state.cardStatements
+        .filter(statement => statement.credit_card_id === creditCardId
+          && statement.due_date < dueDate
+          && statement.statement_total_cents != null)
+        .map(statement => Number(statement.statement_total_cents)));
+      const previousPaymentTotal = rowsWithKeys
+        .filter(row => isCardPayment(row.title) && previousTotals.has(Math.abs(Number(row.amount_cents))))
+        .reduce((sum, row) => sum + Number(row.amount_cents), 0);
+      const ofxNetTotal = ofxPeriod?.startDate
+        ? rowsWithKeys
+          .filter(row => !(isCardPayment(row.title) && row.purchase_date <= ofxPeriod.startDate))
+          .reduce((sum, row) => sum + Number(row.amount_cents), 0)
+        : null;
+      const ofxTotal = ofxPeriod?.totalCents != null
+        && ofxNetTotal != null
+        && Math.abs(ofxPeriod.totalCents - ofxNetTotal) <= 1
+        ? ofxNetTotal
+        : ofxPeriod?.totalCents ?? null;
+      const fallbackTotal = previousPaymentTotal
+        ? netRowsTotal - previousPaymentTotal
+        : rowsWithKeys
+          .filter(row => !isCardPayment(row.title))
+          .reduce((sum, row) => sum + Number(row.amount_cents), 0);
+      if (ofxTotal != null) totalSource = 'ofx-balance';
+      const statementTotalCents = pdfStatementTotal
+        ?? (!isOfx && existingStatement?.source_fingerprint === fingerprint
+          ? existingStatement.statement_total_cents
+          : null)
+        ?? ofxTotal
+        ?? fallbackTotal;
       state.pendingCardImport = {
         creditCardId,
         dueDate,
         fileName: file.name,
         fingerprint,
         existingStatement,
+        statementTotalCents,
+        totalSource,
         rows: rowsWithKeys.map(row => {
           const existingItem = categoryBySource.get(row.source_key);
+          const automaticClassification = existingItem
+            ? null
+            : classifyCardPurchase(row.title, state.financeCategories);
           return {
             ...row,
+            classification_source: existingItem ? 'saved' : automaticClassification ? 'automatic' : 'manual',
             cardholder_label: row.cardholder_label || existingItem?.cardholder_label || null,
+            ...(automaticClassification && {
+              category: automaticClassification.category,
+              subcategory: automaticClassification.subcategory,
+              budget_group: automaticClassification.budget_group
+            }),
             ...(existingItem && {
               category: existingItem.category,
               subcategory: existingItem.subcategory,
@@ -1489,10 +1612,61 @@ if (!config?.url || !config?.publishableKey) {
       renderCardImportPreview();
       setMessage('card-import-message', '');
       preview.hidden = false;
+      preview.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (error) {
       console.error('Could not prepare card statement import:', error);
-      setMessage('card-import-message', error.message || 'Não foi possível ler esse CSV.');
+      setMessage('card-import-message', error.message || 'Não foi possível ler esse arquivo.');
     }
+  }
+
+  async function readCardOfxFile(file) {
+    const data = await file.arrayBuffer();
+    const header = new TextDecoder('ascii').decode(data.slice(0, 1024));
+    const declaredCharset = header.match(/(?:^|\r?\n)CHARSET:\s*([^\r\n]+)/i)?.[1]
+      ?.trim().toLocaleUpperCase('en-US');
+    const encoding = declaredCharset && !/^(UTF-?8|UNICODE)$/.test(declaredCharset)
+      ? 'windows-1252'
+      : 'utf-8';
+    return new TextDecoder(encoding).decode(data);
+  }
+
+  async function extractCardPdfLines(file) {
+    state.pendingPdfLibrary ??= import('https://esm.sh/pdfjs-dist@4.10.38?bundle');
+    let pdfjs;
+    try {
+      pdfjs = await state.pendingPdfLibrary;
+    } catch (error) {
+      state.pendingPdfLibrary = null;
+      throw new Error(`Não foi possível carregar o leitor de PDF. Confira a conexão e tente novamente: ${error.message}`);
+    }
+    pdfjs.GlobalWorkerOptions.workerSrc =
+      'https://esm.sh/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+    const document = await pdfjs.getDocument({
+      data: await file.arrayBuffer(),
+      isEvalSupported: false
+    }).promise;
+    const lines = [];
+    try {
+      for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+        const page = await document.getPage(pageNumber);
+        const content = await page.getTextContent();
+        const rows = new Map();
+        for (const item of content.items) {
+          if (!('str' in item) || !item.str.trim()) continue;
+          const baseline = Math.round(item.transform[5] / 2) * 2;
+          const row = rows.get(baseline) ?? [];
+          row.push({ x: item.transform[4], text: item.str });
+          rows.set(baseline, row);
+        }
+        lines.push(...[...rows.entries()]
+          .sort(([left], [right]) => right - left)
+          .map(([, row]) => row.sort((left, right) => left.x - right.x)
+            .map(item => item.text).join(' ').replace(/\s+/g, ' ').trim()));
+      }
+    } finally {
+      await document.destroy();
+    }
+    return lines;
   }
 
   function parseCardCsv(text) {
@@ -1643,9 +1817,32 @@ if (!config?.url || !config?.publishableKey) {
     const pending = state.pendingCardImport;
     if (!pending) return;
     const selectedCard = state.creditCards.find(card => card.id === pending.creditCardId);
-    const total = pending.rows.reduce((sum, row) => sum + row.amount_cents, 0);
+    const purchasesTotal = pending.rows
+      .filter(row => !isCardPayment(row.title))
+      .reduce((sum, row) => sum + Number(row.amount_cents), 0);
     document.getElementById('card-import-summary').textContent =
-      `${selectedCard?.label ?? 'Cartão'} · vencimento ${formatDate(pending.dueDate)} · ${pending.rows.length} linhas · total ${formatMoney(total)}. Classifique as compras agora ou depois.`;
+      `${selectedCard?.label ?? 'Cartão'} · vencimento ${formatDate(pending.dueDate)} · ${pending.rows.length} lançamentos · compras ${formatMoney(purchasesTotal)}.`;
+    const statementTotalInput = document.getElementById('statement-total');
+    statementTotalInput.value = (Number(pending.statementTotalCents ?? purchasesTotal) / 100).toFixed(2).replace('.', ',');
+    const statementTotalNote = document.getElementById('statement-total-note');
+    statementTotalInput.oninput = () => {
+      pending.statementTotalCents = parseBrazilianAmount(statementTotalInput.value);
+      const declaredTotal = pending.statementTotalCents;
+      if (!Number.isSafeInteger(declaredTotal)) {
+        statementTotalNote.textContent = 'Informe um total válido para continuar.';
+        return;
+      }
+      const difference = declaredTotal - purchasesTotal;
+      const estimate = pending.totalSource === 'ofx-balance'
+        ? 'Total em aberto sugerido pelo saldo do OFX. '
+        : pending.totalSource === 'pdf'
+          ? 'Total sugerido pelo PDF. '
+          : 'Sugestão calculada pelas compras do arquivo; confira com o total em aberto da fatura. ';
+      statementTotalNote.textContent = difference
+        ? `${estimate}Diferença de ${formatMoney(difference)} em relação às compras. No resumo do mês, o total em aberto entra como despesa no mês do vencimento; as compras ficam categorizadas para análise sem duplicar a saída.`
+        : `${estimate}O total entra como despesa no mês do vencimento; as compras continuam categorizadas para análise sem duplicar a saída.`;
+    };
+    statementTotalInput.oninput();
     const container = document.getElementById('card-import-rows');
     container.replaceChildren();
     for (const item of pending.rows) {
@@ -1673,6 +1870,13 @@ if (!config?.url || !config?.publishableKey) {
         item.cardholder_label = cardholder.value.trim().slice(0, 80);
       });
       const category = createCategorySelect(item.category, item.subcategory);
+      const classification = document.createElement('span');
+      classification.className = item.category ? 'statement-classification' : 'statement-classification needs-review';
+      classification.textContent = !item.category
+        ? 'Revisar categoria'
+        : item.classification_source === 'automatic'
+          ? 'Sugestão automática — confira'
+          : item.classification_source === 'saved' ? 'Classificação salva' : 'Classificada';
       const group = document.createElement('select');
       group.className = 'form-input';
       for (const [value, label] of [
@@ -1694,7 +1898,8 @@ if (!config?.url || !config?.publishableKey) {
         item.subcategory = null;
       });
       group.addEventListener('change', () => { item.budget_group = group.value; });
-      info.append(title, subtitle, cardholder, category.categorySelect, category.subcategorySelect, group);
+      info.append(title, subtitle, classification, cardholder,
+        category.categorySelect, category.subcategorySelect, group);
       row.append(info);
       container.append(row);
     }
@@ -1731,6 +1936,11 @@ if (!config?.url || !config?.publishableKey) {
   async function confirmCardImport() {
     const pending = state.pendingCardImport;
     if (!pending || !pending.rows.length) return;
+    const statementTotalCents = parseBrazilianAmount(document.getElementById('statement-total').value);
+    if (!Number.isSafeInteger(statementTotalCents) || statementTotalCents < 0) {
+      setMessage('card-import-message', 'Informe um total válido para a fatura.');
+      return;
+    }
     const existingStatement = pending.existingStatement;
     if (existingStatement?.status === 'paid'
       && existingStatement.source_fingerprint !== pending.fingerprint
@@ -1752,6 +1962,7 @@ if (!config?.url || !config?.publishableKey) {
         due_date: pending.dueDate,
         source_filename: pending.fileName,
         source_fingerprint: pending.fingerprint,
+        statement_total_cents: statementTotalCents,
         imported_by: state.user.id,
         imported_at: new Date().toISOString()
       }, { onConflict: 'credit_card_id,due_date' })
@@ -1788,8 +1999,9 @@ if (!config?.url || !config?.publishableKey) {
     }
     state.pendingCardImport = null;
     document.getElementById('card-import-preview').hidden = true;
-    document.getElementById('card-import-form').reset();
-    setMessage('card-import-message', 'Fatura atualizada. As parcelas futuras foram recalculadas.');
+    document.getElementById('card-import-dialog').close();
+    state.selectedImportCardId = null;
+    showToast('Fatura atualizada. As parcelas futuras foram recalculadas.');
     await loadHouseholdData();
   }
 
@@ -1803,7 +2015,12 @@ if (!config?.url || !config?.publishableKey) {
     for (const statement of state.cardStatements) {
       const card = state.creditCards.find(item => item.id === statement.credit_card_id);
       const items = state.cardStatementItems.filter(item => item.statement_id === statement.id);
-      const total = items.reduce((sum, item) => sum + Number(item.amount_cents), 0);
+      const purchasesTotal = items
+        .filter(item => !isCardPayment(item.title))
+        .reduce((sum, item) => sum + Number(item.amount_cents), 0);
+      const total = statement.statement_total_cents == null
+        ? purchasesTotal
+        : Number(statement.statement_total_cents);
       const row = document.createElement('div');
       row.className = 'list-item';
       const info = document.createElement('div');
@@ -1814,7 +2031,7 @@ if (!config?.url || !config?.publishableKey) {
       const subtitle = document.createElement('div');
       subtitle.className = 'subtitle';
       const overdue = statement.status === 'open' && statement.due_date < localDate(new Date());
-      subtitle.textContent = `${items.length} compras · ${formatMoney(total)} · ${statement.status === 'paid' ? 'Paga' : overdue ? 'Em aberto — vencida' : 'Em aberto'}`;
+      subtitle.textContent = `${items.length} lançamentos · total a pagar ${formatMoney(total)} · compras ${formatMoney(purchasesTotal)} · ${statement.status === 'paid' ? 'Paga' : overdue ? 'Em aberto — vencida' : 'Em aberto'}`;
       info.append(title, subtitle);
       const action = document.createElement('button');
       action.className = 'remove-member';
@@ -1986,9 +2203,12 @@ if (!config?.url || !config?.publishableKey) {
   }
 
   async function saveEntry() {
-    const amount = parseAmount(document.getElementById('transaction-amount').value);
+    const rawAmount = document.getElementById('transaction-amount').value.trim();
+    const amount = rawAmount ? parseAmount(rawAmount) : null;
     const title = document.getElementById('transaction-title').value.trim();
     const selectedFrequency = document.querySelector('.freq-btn.active')?.dataset.freq ?? 'once';
+    const variableAmount = selectedFrequency !== 'once'
+      && document.getElementById('entry-variable-amount').checked;
     const selectedCategory = document.getElementById('entry-category').value;
     const selectedSubcategory = document.getElementById('entry-subcategory').value;
     const transactionType = document.getElementById('btn-expense').classList.contains('active')
@@ -2009,7 +2229,8 @@ if (!config?.url || !config?.publishableKey) {
       return;
     }
     if (!title || !selectedCategory || !selectedSubcategory
-      || !Number.isSafeInteger(amount) || amount <= 0
+      || (!variableAmount && (!Number.isSafeInteger(amount) || amount <= 0))
+      || (variableAmount && amount != null && (!Number.isSafeInteger(amount) || amount < 0))
       || (paymentMethod === 'credit' && !creditCardId)) {
       showToast('Informe a categoria, subcategoria, cartão (se aplicável) e um valor válido.');
       return;
@@ -2025,24 +2246,46 @@ if (!config?.url || !config?.publishableKey) {
       budget_group: budgetGroup,
       payment_method: paymentMethod,
       credit_card_id: creditCardId,
-      amount_cents: amount
+      amount_cents: variableAmount ? null : amount
     };
     document.getElementById('save-transaction').disabled = true;
     document.getElementById('save-message').textContent = 'Salvando...';
 
-    const result = selectedFrequency === 'once'
-      ? await supabase.from('transactions').insert({
+    let result;
+    if (selectedFrequency === 'once') {
+      result = await supabase.from('transactions').insert({
           ...payload,
           transaction_date: localDate(new Date())
-        })
-      : await supabase.from('recurring_items').insert({
+        });
+    } else {
+      const today = new Date();
+      const startsMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+      result = await supabase.from('recurring_items').insert({
           ...payload,
           frequency: selectedFrequency,
+          amount_behavior: variableAmount ? 'variable' : 'fixed',
+          starts_month: startsMonth,
           day_of_month: new Date().getDate(),
           month_of_year: selectedFrequency === 'yearly'
             ? Number(document.getElementById('transaction-month').value)
             : null
+        }).select('id').single();
+      if (!result.error) {
+        const { error: ensureError } = await supabase.rpc('ensure_monthly_control_items', {
+          target_month_start: startsMonth
         });
+        if (ensureError) {
+          result = { error: ensureError };
+        } else if (variableAmount && amount != null && selectedFrequency === 'monthly') {
+          const { error: initialAmountError } = await supabase.from('monthly_control_items')
+            .update({ amount_cents: amount })
+            .eq('recurring_item_id', result.data.id)
+            .eq('month_start', startsMonth)
+            .eq('household_id', state.membership.household_id);
+          if (initialAmountError) result = { error: initialAmountError };
+        }
+      }
+    }
     document.getElementById('save-transaction').disabled = false;
 
     if (result.error) {
@@ -2055,6 +2298,7 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('transaction-title').value = '';
     document.getElementById('entry-category').value = '';
     document.getElementById('entry-subcategory').value = '';
+    document.getElementById('entry-variable-amount').checked = false;
     document.getElementById('save-message').textContent = '';
     window.closeSheet();
     showToast(selectedFrequency === 'once' ? 'Lançamento salvo.' : 'Item recorrente salvo.');
@@ -2077,7 +2321,7 @@ if (!config?.url || !config?.publishableKey) {
         item.transaction_type === 'expense' && item.frequency === 'yearly')
     };
     const emptyMessages = {
-      income: 'Nenhuma receita fixa cadastrada.',
+      income: 'Nenhuma receita recorrente cadastrada.',
       monthly: 'Nenhuma despesa mensal cadastrada.',
       yearly: 'Nenhuma despesa anual cadastrada.'
     };
@@ -2108,6 +2352,14 @@ if (!config?.url || !config?.publishableKey) {
           item.amount_cents == null ? 'Valor pendente' : formatMoney(Number(item.amount_cents))
         }`;
         info.append(title, subtitle);
+        if (item.transaction_type === 'income') {
+          const behavior = document.createElement('span');
+          behavior.className = 'recurring-tag';
+          behavior.textContent = item.amount_behavior === 'variable'
+            ? 'Receita variável'
+            : 'Receita fixa';
+          info.append(behavior);
+        }
         if (item.amount_cents == null) {
           const amountInput = document.createElement('input');
           amountInput.className = 'form-input';
@@ -2121,16 +2373,60 @@ if (!config?.url || !config?.publishableKey) {
           saveAmount.addEventListener('click', () => fillRecurringAmount(item, amountInput.value));
           info.append(amountInput, saveAmount);
         }
+        const actions = document.createElement('div');
+        actions.className = 'recurring-actions';
+        if (item.transaction_type === 'income') {
+          const toggleBehavior = document.createElement('button');
+          toggleBehavior.className = 'remove-member';
+          toggleBehavior.type = 'button';
+          toggleBehavior.textContent = item.amount_behavior === 'variable'
+            ? 'Marcar como fixa'
+            : 'Marcar como variável';
+          toggleBehavior.addEventListener('click', () => toggleRecurringIncomeBehavior(item));
+          actions.append(toggleBehavior);
+        }
         const remove = document.createElement('button');
         remove.className = 'remove-member';
         remove.type = 'button';
         remove.textContent = 'Remover';
         remove.setAttribute('aria-label', `Remover ${item.title}`);
         remove.addEventListener('click', () => deleteRecurringItem(item));
-        row.append(info, remove);
+        actions.append(remove);
+        row.append(info, actions);
         targets[group].append(row);
       }
     }
+  }
+
+  async function toggleRecurringIncomeBehavior(item) {
+    const nextBehavior = item.amount_behavior === 'variable' ? 'fixed' : 'variable';
+    if (nextBehavior === 'fixed' && item.amount_cents == null) {
+      showToast('Preencha o valor mensal antes de marcar esta receita como fixa.');
+      return;
+    }
+    const { error } = await supabase.from('recurring_items')
+      .update({ amount_behavior: nextBehavior })
+      .eq('id', item.id)
+      .eq('household_id', state.membership.household_id);
+    if (error) {
+      console.error('Could not change recurring income behavior:', error.message);
+      showToast('Não foi possível alterar a classificação da receita.');
+      return;
+    }
+    const { error: monthlyError } = await supabase.from('monthly_control_items')
+      .update({ income_behavior: nextBehavior })
+      .eq('recurring_item_id', item.id)
+      .gte('month_start', state.controlMonthKey)
+      .eq('household_id', state.membership.household_id);
+    if (monthlyError) {
+      console.error('Could not update income behavior for monthly items:', monthlyError.message);
+      showToast('A receita foi atualizada, mas os meses seguintes precisam ser recarregados.');
+      return;
+    }
+    showToast(nextBehavior === 'fixed'
+      ? 'Receita marcada como fixa.'
+      : 'Receita marcada como variável.');
+    await loadHouseholdData();
   }
 
   async function fillRecurringAmount(item, rawAmount) {
@@ -2174,7 +2470,8 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('control-month-title').textContent = monthLabel;
     document.getElementById('control-month-label').textContent = monthLabel;
 
-    const currentRows = state.monthlyControlItems.filter(item => item.month_start === monthStart);
+    const currentRows = state.monthlyControlItems.filter(item =>
+      item.month_start === monthStart && !item.is_skipped);
     const groups = {
       income: { list: 'control-income-list', total: 'control-income-total', rows: [] },
       fixed: { list: 'control-fixed-list', total: 'control-fixed-total', rows: [] },
@@ -2182,8 +2479,10 @@ if (!config?.url || !config?.publishableKey) {
       additional: { list: 'control-additional-list', total: 'control-additional-total', rows: [] }
     };
     for (const item of currentRows) groups[item.control_group]?.rows.push(item);
-    const cardEntries = financialEntriesForMonth(monthKey).filter(item => item.payment_method === 'credit');
-    for (const item of cardEntries) {
+    const monthlyEntries = financialEntriesForMonth(monthKey);
+    const detailEntries = monthlyEntries.filter(item =>
+      item.payment_method === 'credit' || item.source_transaction_id);
+    for (const item of detailEntries) {
       const groupKey = monthlyControlGroupForCardItem(item.budget_group);
       groups[groupKey].cardRows ??= [];
       groups[groupKey].cardRows.push(item);
@@ -2200,6 +2499,8 @@ if (!config?.url || !config?.publishableKey) {
         total += Number(item.amount_cents ?? 0);
         const row = document.createElement('div');
         row.className = 'control-row';
+        const description = document.createElement('div');
+        description.className = 'control-row-description';
         const name = document.createElement('input');
         name.className = 'control-amount';
         name.style.textAlign = 'left';
@@ -2213,7 +2514,44 @@ if (!config?.url || !config?.publishableKey) {
         amount.value = item.amount_cents == null
           ? ''
           : (Number(item.amount_cents) / 100).toFixed(2).replace('.', ',');
-        amount.setAttribute('aria-label', `Valor mensal de ${item.item_name}`);
+        const recurring = state.recurringItems.find(template => template.id === item.recurring_item_id);
+        const previousDate = new Date(`${monthStart}T12:00:00`);
+        previousDate.setMonth(previousDate.getMonth() - 1);
+        const previousMonth = `${previousDate.getFullYear()}-${String(previousDate.getMonth() + 1).padStart(2, '0')}-01`;
+        const previousAmount = item.recurring_item_id
+          ? state.monthlyControlItems.find(row =>
+            row.recurring_item_id === item.recurring_item_id
+            && row.month_start === previousMonth
+            && !row.is_skipped
+            && row.amount_cents != null)?.amount_cents
+          : null;
+        const behavior = item.transaction_type === 'income'
+          ? item.income_behavior ?? recurring?.amount_behavior ?? 'variable'
+          : recurring?.amount_behavior ?? (item.control_group === 'fixed' ? 'fixed' : 'variable');
+        const isVariable = behavior === 'variable';
+        const amountLabel = isVariable
+          ? `Valor real de ${item.item_name}`
+          : `Valor mensal de ${item.item_name}`;
+        amount.setAttribute('aria-label', amountLabel);
+        if (isVariable) {
+          amount.placeholder = previousAmount == null
+            ? 'Valor real do mês'
+            : `Anterior: ${formatMoney(Number(previousAmount))}`;
+        }
+        description.append(name);
+        const type = document.createElement('span');
+        type.className = 'recurring-tag';
+        type.textContent = item.transaction_type === 'income'
+          ? isVariable ? 'Receita variável · informe o valor do mês' : 'Receita fixa · repete mensalmente'
+          : isVariable ? 'Valor variável · preencher a cada mês' : 'Fixo · repete mensalmente';
+        if (isVariable && previousAmount != null) {
+          const estimate = document.createElement('span');
+          estimate.className = 'control-previous-amount';
+          estimate.textContent = `Último valor: ${formatMoney(Number(previousAmount))}`;
+          description.append(type, estimate);
+        } else {
+          description.append(type);
+        }
         const actions = document.createElement('div');
         actions.className = 'control-row-actions';
         const save = document.createElement('button');
@@ -2227,7 +2565,7 @@ if (!config?.url || !config?.publishableKey) {
         remove.setAttribute('aria-label', `Remover ${item.item_name}`);
         remove.addEventListener('click', () => deleteMonthlyControlItem(item));
         actions.append(save, remove);
-        row.append(name, amount, actions);
+        row.append(description, amount, actions);
         list.append(row);
       }
       for (const item of group.cardRows ?? []) {
@@ -2244,8 +2582,9 @@ if (!config?.url || !config?.publishableKey) {
           ? ` · Parcela ${item.installment_number}/${item.installment_total}`
           : '';
         const forecast = item.is_forecast ? ' · Prevista' : '';
+        const origin = item.card_label ?? item.category;
         subtitle.textContent =
-          `${item.card_label} · ${formatDate(item.display_date)}${installment}${forecast}`;
+          `${origin ?? 'Lançamento'} · ${formatDate(item.display_date ?? item.transaction_date)}${installment}${forecast}`;
         info.append(title, subtitle);
         const actions = document.createElement('div');
         actions.className = 'control-card-item-actions';
@@ -2272,60 +2611,130 @@ if (!config?.url || !config?.publishableKey) {
     const cardList = document.getElementById('control-cards-list');
     cardList.replaceChildren();
     const statements = state.cardStatements.filter(statement => statement.due_date.startsWith(monthKey));
+    const activeCards = state.creditCards.filter(card => card.active);
+    const cardsWithStatements = new Set(statements.map(statement => statement.credit_card_id));
+    const cardsToShow = [
+      ...activeCards,
+      ...state.creditCards.filter(card => !card.active && cardsWithStatements.has(card.id))
+    ];
     let cardTotal = 0;
-    if (!statements.length) {
-      appendEmptyState(cardList, 'As faturas importadas deste mês aparecerão aqui.');
+    if (!cardsToShow.length) {
+      appendEmptyState(cardList, 'Cadastre um cartão em Fixos para importar uma fatura.');
     }
-    for (const statement of statements) {
-      const card = state.creditCards.find(item => item.id === statement.credit_card_id);
-      const items = state.cardStatementItems.filter(item => item.statement_id === statement.id);
-      const total = items.reduce((sum, item) => sum + Number(item.amount_cents), 0);
-      cardTotal += total;
+    for (const card of cardsToShow) {
+      const cardStatements = statements.filter(statement => statement.credit_card_id === card.id);
+      const purchasesTotal = cardStatements.reduce((sum, statement) =>
+        sum + state.cardStatementItems
+          .filter(item => item.statement_id === statement.id && !isCardPayment(item.title))
+          .reduce((itemSum, item) => itemSum + Number(item.amount_cents), 0), 0);
+      const statementTotal = cardStatements.reduce((sum, statement) =>
+        sum + (statement.statement_total_cents == null
+          ? state.cardStatementItems
+            .filter(item => item.statement_id === statement.id && !isCardPayment(item.title))
+            .reduce((itemSum, item) => itemSum + Number(item.amount_cents), 0)
+          : Number(statement.statement_total_cents)), 0);
+      cardTotal += statementTotal;
       const row = document.createElement('div');
-      row.className = 'control-card-row';
+      row.className = 'payment-card-tile';
       const info = document.createElement('div');
+      info.className = 'payment-card-info';
+      const identity = document.createElement('div');
+      identity.className = 'payment-card-identity';
+      const icon = document.createElement('span');
+      icon.className = 'payment-card-icon';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.textContent = '💳';
+      const details = document.createElement('div');
+      details.className = 'payment-card-details';
       const title = document.createElement('div');
       title.className = 'title';
-      title.textContent = card?.label ?? 'Cartão';
+      title.textContent = card.label;
       const subtitle = document.createElement('div');
       subtitle.className = 'subtitle';
-      subtitle.textContent = `${items.length} lançamentos · ${formatDate(statement.due_date)} · ${statement.status === 'paid' ? 'Paga' : 'Em aberto'}`;
-      info.append(title, subtitle);
+      subtitle.textContent = `${card.provider} · ${card.titular_name || 'Cartão cadastrado'}`;
+      details.append(title, subtitle);
+      identity.append(icon, details);
+      info.append(identity);
+      if (cardStatements.length) {
+        const statementInfo = document.createElement('div');
+        statementInfo.className = 'payment-card-statement';
+        const amount = document.createElement('strong');
+        amount.textContent = formatMoney(statementTotal);
+        const label = document.createElement('span');
+        label.textContent = cardStatements.length === 1
+          ? `Vencimento ${formatDate(cardStatements[0].due_date)} · compras classificadas ${formatMoney(purchasesTotal)}`
+          : `${cardStatements.length} faturas neste mês · compras classificadas ${formatMoney(purchasesTotal)}`;
+        statementInfo.append(amount, label);
+        info.append(statementInfo);
+      } else {
+        const statementInfo = document.createElement('div');
+        statementInfo.className = 'payment-card-statement empty';
+        statementInfo.textContent = 'Nenhuma fatura importada neste mês';
+        info.append(statementInfo);
+      }
       const actions = document.createElement('div');
-      actions.style.display = 'grid';
-      actions.style.justifyItems = 'end';
-      actions.style.gap = '6px';
-      const amountLabel = document.createElement('strong');
-      amountLabel.textContent = formatMoney(total);
-      const update = document.createElement('button');
-      update.type = 'button';
-      update.className = 'secondary-btn';
-      update.textContent = 'Atualizar';
-      update.addEventListener('click', () => {
+      actions.className = 'payment-card-actions';
+      const importButton = document.createElement('button');
+      importButton.type = 'button';
+      importButton.className = 'payment-card-import';
+      importButton.textContent = cardStatements.length ? 'Atualizar fatura' : 'Importar fatura';
+      importButton.setAttribute('aria-label', `${cardStatements.length ? 'Atualizar' : 'Importar'} fatura de ${card.label}`);
+      importButton.addEventListener('click', () => openCardImport(card.id));
+      const historyButton = document.createElement('button');
+      historyButton.type = 'button';
+      historyButton.className = 'payment-card-history';
+      historyButton.textContent = 'Histórico';
+      historyButton.addEventListener('click', () => {
         window.showScreen('recurring');
         window.setTimeout(() => {
-          document.getElementById('import-card').value = statement.credit_card_id;
-          document.getElementById('card-import-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
-          document.getElementById('statement-csv').focus();
+          document.getElementById('card-statement-list').scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, 50);
       });
-      actions.append(amountLabel, update);
+      actions.append(importButton, historyButton);
       row.append(info, actions);
       cardList.append(row);
     }
     document.getElementById('control-cards-total').textContent = formatMoney(cardTotal);
-    const manualIncome = groups.income.rows.reduce((sum, item) => sum + Number(item.amount_cents ?? 0), 0);
-    const manualExpenses = ['fixed', 'variable', 'additional'].reduce((sum, key) =>
-      sum + groups[key].rows.reduce((groupSum, item) => groupSum + Number(item.amount_cents ?? 0), 0), 0);
-    const cardExpenses = ['fixed', 'variable', 'additional'].reduce((sum, key) =>
-      sum + (groups[key].cardRows ?? []).reduce((groupSum, item) => groupSum + Number(item.amount_cents), 0), 0);
-    document.getElementById('month-income').textContent = formatMoney(manualIncome);
-    document.getElementById('month-expenses').textContent = formatMoney(manualExpenses + cardExpenses);
-    document.getElementById('month-balance').textContent = formatMoney(manualIncome - manualExpenses - cardExpenses);
+    renderMonthlySummary(monthKey);
     document.getElementById('copy-control-items').disabled = currentRows.length > 0;
     document.getElementById('copy-control-items').textContent = currentRows.length
       ? 'Este mês já tem itens cadastrados'
       : 'Trazer os itens do mês anterior';
+  }
+
+  function renderMonthlySummary(monthKey) {
+    const entries = financialEntriesForMonth(monthKey);
+    const summary = calculateMonthlyCashFlow(
+      entries,
+      state.cardStatements,
+      state.cardStatementItems,
+      monthKey
+    );
+    document.getElementById('month-income').textContent = formatMoney(summary.income);
+    document.getElementById('month-expenses').textContent = formatMoney(summary.expenses);
+    document.getElementById('month-balance').textContent = formatMoney(summary.income - summary.expenses);
+
+    const incomeDetail = document.getElementById('month-income-detail');
+    if (incomeDetail) {
+      incomeDetail.textContent =
+        `Fixa ${formatMoney(summary.incomeFixed)} · Variável ${formatMoney(summary.incomeVariable)}`;
+    }
+    const expenseDetail = document.getElementById('month-expenses-detail');
+    if (expenseDetail) {
+      expenseDetail.textContent = [
+        `Fixos ${formatMoney(summary.expensesFixed)}`,
+        `Variáveis ${formatMoney(summary.expensesVariable)}`,
+        `Faturas ${formatMoney(summary.cardExpenses)}`,
+        `Parcelas futuras ${formatMoney(summary.forecastExpenses)}`
+      ].join(' · ');
+    }
+    const balanceDetail = document.getElementById('month-balance-detail');
+    if (balanceDetail) {
+      balanceDetail.textContent = summary.income - summary.expenses >= 0
+        ? 'Sobra prevista no mês'
+        : 'Falta prevista no mês';
+    }
+    return summary;
   }
 
   async function addMonthlyControlItem(event) {
@@ -2335,9 +2744,15 @@ if (!config?.url || !config?.publishableKey) {
     const controlGroup = form.dataset.controlGroup;
     const rawAmount = form.elements.amount.value.trim();
     const amountCents = rawAmount ? parseAmount(rawAmount) : null;
+    const repeatMonthly = form.elements.repeat_monthly.checked;
+    const variableAmount = repeatMonthly && Boolean(form.elements.variable_amount?.checked);
+    const incomeBehavior = controlGroup === 'income'
+      ? repeatMonthly && !variableAmount ? 'fixed' : 'variable'
+      : null;
     if (!itemName || itemName.length > 120
       || !['income', 'fixed', 'variable', 'additional'].includes(controlGroup)
-      || (rawAmount && (!Number.isSafeInteger(amountCents) || amountCents < 0))) {
+      || (rawAmount && (!Number.isSafeInteger(amountCents) || amountCents < 0))
+      || (repeatMonthly && !variableAmount && (!Number.isSafeInteger(amountCents) || amountCents <= 0))) {
       setMessage('monthly-control-message', 'Informe o nome e um valor válido (ou deixe o valor em branco).');
       return;
     }
@@ -2348,6 +2763,70 @@ if (!config?.url || !config?.publishableKey) {
       setMessage('monthly-control-message', 'Esse item já existe neste grupo do mês.');
       return;
     }
+    if (repeatMonthly) {
+      const transactionType = controlGroup === 'income' ? 'income' : 'expense';
+      const budgetGroup = controlGroup === 'fixed' ? 'fixed'
+        : controlGroup === 'additional' ? 'emergency'
+          : controlGroup === 'variable' ? 'variable' : null;
+      const amountBehavior = variableAmount ? 'variable' : 'fixed';
+      const matchingCategory = state.financeCategories.find(item =>
+        item.transaction_type === transactionType
+        && (transactionType === 'income' || item.budget_group === budgetGroup)
+        && [item.category, item.subcategory].some(value =>
+          value.toLocaleLowerCase('pt-BR') === itemName.toLocaleLowerCase('pt-BR')));
+      const fallbackCategory = state.financeCategories.find(item =>
+        item.transaction_type === transactionType
+        && (transactionType === 'income' || item.budget_group === budgetGroup))
+        ?? state.financeCategories.find(item => item.transaction_type === transactionType);
+      const { data: template, error: templateError } = await supabase.from('recurring_items')
+        .insert({
+          household_id: state.membership.household_id,
+          created_by: state.user.id,
+          title: itemName,
+          transaction_type: transactionType,
+          category: matchingCategory?.category ?? fallbackCategory?.category ?? 'Outros',
+          subcategory: matchingCategory?.subcategory ?? fallbackCategory?.subcategory ?? 'Outras despesas',
+          budget_group: budgetGroup,
+          amount_cents: variableAmount ? null : amountCents,
+          amount_behavior: amountBehavior,
+          frequency: 'monthly',
+          day_of_month: 1,
+          month_of_year: null,
+          starts_month: state.controlMonthKey,
+          active: true
+        })
+        .select('id')
+        .single();
+      if (templateError) {
+        console.error('Could not create recurring monthly item:', templateError.message);
+        setMessage('monthly-control-message', 'Não foi possível salvar o modelo mensal. Confira se a migração está aplicada e se o nome já existe.');
+        return;
+      }
+      const { error: ensureError } = await supabase.rpc('ensure_monthly_control_items', {
+        target_month_start: state.controlMonthKey
+      });
+      if (ensureError) {
+        console.error('Could not create this month from the recurring template:', ensureError.message);
+        setMessage('monthly-control-message', 'O modelo foi salvo, mas este mês não foi preparado. Atualize a página após aplicar a migração mensal.');
+        return;
+      }
+      if (variableAmount && amountCents != null) {
+        const { error: actualAmountError } = await supabase.from('monthly_control_items')
+          .update({ amount_cents: amountCents })
+          .eq('recurring_item_id', template.id)
+          .eq('month_start', state.controlMonthKey)
+          .eq('household_id', state.membership.household_id);
+        if (actualAmountError) {
+          console.error('Could not save the initial variable monthly amount:', actualAmountError.message);
+          setMessage('O modelo foi criado, mas não foi possível salvar o valor real deste mês.');
+          return;
+        }
+      }
+      form.reset();
+      setMessage('monthly-control-message', 'Modelo mensal salvo; ele aparecerá automaticamente nos próximos meses.');
+      await loadHouseholdData();
+      return;
+    }
     const { error } = await supabase.from('monthly_control_items').insert({
       household_id: state.membership.household_id,
       month_start: state.controlMonthKey,
@@ -2355,6 +2834,7 @@ if (!config?.url || !config?.publishableKey) {
       transaction_type: controlGroup === 'income' ? 'income' : 'expense',
       control_group: controlGroup,
       amount_cents: amountCents,
+      income_behavior: incomeBehavior,
       created_by: state.user.id
     });
     if (error) {
@@ -2385,6 +2865,22 @@ if (!config?.url || !config?.publishableKey) {
       return;
     }
     button.disabled = true;
+    const recurring = state.recurringItems.find(template => template.id === item.recurring_item_id);
+    if (recurring) {
+      const { error: templateError } = await supabase.from('recurring_items')
+        .update({
+          title: normalizedName,
+          ...(recurring.amount_behavior === 'fixed' && { amount_cents: amountCents })
+        })
+        .eq('id', recurring.id)
+        .eq('household_id', state.membership.household_id);
+      if (templateError) {
+        button.disabled = false;
+        console.error('Could not update recurring item template:', templateError.message);
+        showToast('Não foi possível atualizar o modelo mensal.');
+        return;
+      }
+    }
     const { error } = await supabase.from('monthly_control_items')
       .update({ item_name: normalizedName, amount_cents: amountCents, updated_at: new Date().toISOString() })
       .eq('id', item.id)
@@ -2401,14 +2897,23 @@ if (!config?.url || !config?.publishableKey) {
 
   async function deleteMonthlyControlItem(item) {
     if (!window.confirm(`Remover "${item.item_name}" deste mês?`)) return;
-    const { error } = await supabase.from('monthly_control_items')
-      .delete()
-      .eq('id', item.id)
-      .eq('household_id', state.membership.household_id);
+    const recurring = Boolean(item.recurring_item_id);
+    const { error } = recurring
+      ? await supabase.from('monthly_control_items')
+        .update({ is_skipped: true })
+        .eq('id', item.id)
+        .eq('household_id', state.membership.household_id)
+      : await supabase.from('monthly_control_items')
+        .delete()
+        .eq('id', item.id)
+        .eq('household_id', state.membership.household_id);
     if (error) {
       console.error('Could not remove monthly control item:', error.message);
-      showToast('Não foi possível remover este item.');
+      showToast('Não foi possível remover este item deste mês.');
       return;
+    }
+    if (recurring) {
+      showToast('Item removido somente deste mês; a recorrência continua nos próximos.');
     }
     await loadHouseholdData();
   }
@@ -2429,7 +2934,10 @@ if (!config?.url || !config?.publishableKey) {
           control_group: item.transaction_type === 'income'
             ? 'income'
             : item.budget_group === 'fixed' ? 'fixed'
-              : item.budget_group === 'emergency' ? 'additional' : 'variable'
+              : item.budget_group === 'emergency' ? 'additional' : 'variable',
+          income_behavior: item.transaction_type === 'income'
+            ? item.amount_behavior ?? 'fixed'
+            : null
         }));
     }
     const existingNames = new Set(state.monthlyControlItems
@@ -2444,6 +2952,9 @@ if (!config?.url || !config?.publishableKey) {
         transaction_type: item.transaction_type,
         control_group: item.control_group,
         amount_cents: null,
+        income_behavior: item.transaction_type === 'income'
+          ? item.income_behavior ?? 'variable'
+          : null,
         created_by: state.user.id
       }));
     if (!rows.length) {
@@ -2466,18 +2977,19 @@ if (!config?.url || !config?.publishableKey) {
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     const controlMonthKey = state.controlMonthKey?.slice(0, 7) ?? currentMonth;
-    const controlEntries = financialEntriesForMonth(controlMonthKey);
-    const monthIncome = sumType(controlEntries, 'income');
-    const monthExpenses = sumType(controlEntries, 'expense');
-    document.getElementById('month-income').textContent = formatMoney(monthIncome);
-    document.getElementById('month-expenses').textContent = formatMoney(monthExpenses);
-    document.getElementById('month-balance').textContent = formatMoney(monthIncome - monthExpenses);
+    renderMonthlySummary(controlMonthKey);
 
     const selectedMonthDate = new Date(now.getFullYear(), now.getMonth() - (5 - state.insightsMonthIndex), 1);
     const selectedMonthKey = `${selectedMonthDate.getFullYear()}-${String(selectedMonthDate.getMonth() + 1).padStart(2, '0')}`;
     const insightsTransactions = financialEntriesForMonth(selectedMonthKey);
-    const insightIncome = sumType(insightsTransactions, 'income');
-    const insightExpenses = sumType(insightsTransactions, 'expense');
+    const insightSummary = calculateMonthlyCashFlow(
+      insightsTransactions,
+      state.cardStatements,
+      state.cardStatementItems,
+      selectedMonthKey
+    );
+    const insightIncome = insightSummary.income;
+    const insightExpenses = insightSummary.expenses;
     const insightReserveNet = state.reserveMovements
       .filter(item => item.movement_date.startsWith(selectedMonthKey))
       .reduce((sum, item) => sum + (item.direction === 'deposit' ? 1 : -1) * Number(item.amount_cents), 0);
@@ -2518,9 +3030,9 @@ if (!config?.url || !config?.publishableKey) {
         ...item,
         source_item_id: item.id,
         statement_id: statement?.id,
-        created_by: null,
+        created_by: statement?.imported_by ?? null,
         transaction_type: 'expense',
-        transaction_date: statement?.due_date ?? item.purchase_date,
+        transaction_date: item.purchase_date,
         display_date: item.purchase_date,
         title: item.title,
         card_label: card?.label ?? 'Cartão',
@@ -2536,25 +3048,53 @@ if (!config?.url || !config?.publishableKey) {
 
   function financialEntriesForMonth(monthKey) {
     const monthlyItems = state.monthlyControlItems.filter(item =>
-      item.month_start.startsWith(monthKey));
-    const transactions = monthlyItems.length
-      ? monthlyItems
-        .filter(item => Number(item.amount_cents ?? 0) > 0)
-        .map(item => ({
+      item.month_start.startsWith(monthKey) && !item.is_skipped);
+    const representedTransactions = new Set(monthlyItems.map(item =>
+      `${item.transaction_type}|${item.item_name.trim().toLocaleLowerCase('pt-BR')}`));
+    const monthlyEntries = monthlyItems
+      .filter(item => Number(item.amount_cents ?? 0) > 0)
+      .map(item => {
+        const recurring = state.recurringItems.find(template => template.id === item.recurring_item_id);
+        const amountBehavior = item.transaction_type === 'income'
+          ? item.income_behavior ?? recurring?.amount_behavior ?? 'variable'
+          : recurring?.amount_behavior ?? (item.control_group === 'fixed' ? 'fixed' : 'variable');
+        return {
+          control_item_id: item.id,
+          recurring_item_id: item.recurring_item_id,
           transaction_type: item.transaction_type,
           transaction_date: item.month_start,
+          display_date: item.month_start,
           title: item.item_name,
-          category: item.item_name,
-          subcategory: null,
-          budget_group: item.control_group === 'fixed' ? 'fixed'
+          category: recurring?.category ?? item.item_name,
+          subcategory: recurring?.subcategory ?? null,
+          budget_group: recurring?.budget_group ?? (item.control_group === 'fixed' ? 'fixed'
             : item.control_group === 'additional' ? 'emergency'
-              : item.control_group === 'variable' ? 'variable' : null,
+              : item.control_group === 'variable' ? 'variable' : null),
+          amount_behavior: amountBehavior,
           amount_cents: Number(item.amount_cents)
-        }))
-      : state.transactions.filter(item => item.transaction_date.startsWith(monthKey));
+        };
+      });
+    const transactionEntries = state.transactions
+      .filter(item => item.transaction_date.startsWith(monthKey))
+      .filter(item => !representedTransactions.has(
+        `${item.transaction_type}|${item.title.trim().toLocaleLowerCase('pt-BR')}`))
+      .map(item => ({
+        ...item,
+        source_transaction_id: item.id,
+        display_date: item.transaction_date,
+        amount_behavior: item.transaction_type === 'income'
+          ? 'variable'
+          : item.budget_group === 'fixed' ? 'fixed' : 'variable'
+      }));
+    const transactions = [...monthlyEntries, ...transactionEntries];
     const cardEntries = allCardStatementEntries().filter(item =>
       item.transaction_date.startsWith(monthKey));
-    const forecastEntries = getCardInstallmentForecast().filter(item => item.month === monthKey);
+    const statementCardMonths = new Set(state.cardStatements
+      .filter(statement => statement.due_date.startsWith(monthKey))
+      .map(statement => statement.credit_card_id));
+    const forecastEntries = getCardInstallmentForecast().filter(item =>
+      item.month === monthKey
+      && !statementCardMonths.has(item.credit_card_id));
     return [...transactions, ...cardEntries, ...forecastEntries];
   }
 
@@ -2635,7 +3175,7 @@ if (!config?.url || !config?.publishableKey) {
 
     for (const item of items) {
       const row = document.createElement('div');
-      row.className = 'list-item';
+      row.className = 'list-item transaction-row';
       const icon = document.createElement('div');
       icon.className = 'icon';
       icon.textContent = categoryIcons[item.category] ?? '📦';
@@ -2648,18 +3188,53 @@ if (!config?.url || !config?.publishableKey) {
       title.textContent = item.title;
       const subtitle = document.createElement('div');
       subtitle.className = 'subtitle';
-      const author = state.members.find(member => member.user_id === item.created_by)?.email ?? 'Membro da casa';
+      const member = state.members.find(person => person.user_id === item.created_by);
+      const author = member ? memberDisplayName(member.email)
+        : item.card_label ? 'Importado da fatura' : 'Membro da casa';
       const dateLabel = formatDate(item.display_date ?? item.transaction_date);
       const cardLabel = item.card_label ? ` · ${item.card_label}` : '';
       const subcategory = item.subcategory ? ` · ${item.subcategory}` : '';
-      subtitle.textContent = `${dateLabel} · ${author} · ${item.category ?? 'Sem categoria'}${subcategory}${cardLabel}`;
+      subtitle.textContent = `${dateLabel} · ${item.category ?? 'Sem categoria'}${subcategory}${cardLabel}`;
       info.append(title, subtitle);
+      const avatar = document.createElement('div');
+      avatar.className = 'transaction-avatar';
+      avatar.setAttribute('role', 'img');
+      avatar.setAttribute('aria-label', `Responsável: ${author}`);
+      avatar.title = author;
+      if (member) {
+        avatar.classList.add(member.role === 'owner' ? 'owner' : 'member');
+        avatar.textContent = memberInitials(author);
+      } else if (item.card_label) {
+        avatar.classList.add('imported');
+        avatar.textContent = 'IMP';
+      } else {
+        avatar.classList.add('member');
+        avatar.textContent = '?';
+      }
+      const attribution = document.createElement('div');
+      attribution.className = 'transaction-attribution';
+      const authorName = document.createElement('span');
+      authorName.className = 'transaction-author-name';
+      authorName.textContent = author;
+      attribution.append(avatar, authorName);
       const amount = document.createElement('div');
       amount.className = `amount ${item.transaction_type}`;
       amount.textContent = `${item.transaction_type === 'income' ? '+' : '−'} ${formatMoney(item.amount_cents)}`;
-      row.append(icon, info, amount);
+      row.append(icon, info, attribution, amount);
       container.append(row);
     }
+  }
+
+  function memberDisplayName(email) {
+    const localPart = email.split('@', 1)[0];
+    const name = localPart.split(/[._-]+/).filter(Boolean)
+      .map(part => part[0].toLocaleUpperCase('pt-BR') + part.slice(1)).join(' ');
+    return name || email;
+  }
+
+  function memberInitials(name) {
+    return name.split(/\s+/).filter(Boolean).slice(0, 2)
+      .map(part => Array.from(part)[0].toLocaleUpperCase('pt-BR')).join('');
   }
 
   function updateCharts(currentTransactions) {
@@ -2672,10 +3247,12 @@ if (!config?.url || !config?.publishableKey) {
       const reserveNet = state.reserveMovements
         .filter(item => item.movement_date.startsWith(key))
         .reduce((sum, item) => sum + (item.direction === 'deposit' ? 1 : -1) * Number(item.amount_cents), 0);
-      const income = monthTransactions.filter(item => item.transaction_type === 'income')
-        .reduce((sum, item) => sum + Number(item.amount_cents), 0);
-      const expenses = monthTransactions.filter(item => item.transaction_type === 'expense')
-        .reduce((sum, item) => sum + Number(item.amount_cents), 0);
+      const { income, expenses } = calculateMonthlyCashFlow(
+        monthTransactions,
+        state.cardStatements,
+        state.cardStatementItems,
+        key
+      );
       return {
         income: income / 100,
         expenses: expenses / 100,
@@ -2719,6 +3296,27 @@ if (!config?.url || !config?.publishableKey) {
     const normalized = rawValue.trim().replace(/\./g, '').replace(',', '.');
     const value = Number(normalized);
     return Number.isFinite(value) ? Math.round(value * 100) : 0;
+  }
+
+  function parseBrazilianAmount(rawValue) {
+    let normalized = rawValue.trim().replace(/[R$\s]/g, '');
+    if (!normalized) return NaN;
+    const lastComma = normalized.lastIndexOf(',');
+    const lastDot = normalized.lastIndexOf('.');
+    if (lastComma >= 0 && lastDot >= 0) {
+      const decimalSeparator = lastComma > lastDot ? ',' : '.';
+      normalized = normalized.replace(decimalSeparator === ',' ? /\./g : /,/g, '');
+      if (decimalSeparator === ',') normalized = normalized.replace(',', '.');
+    } else if (lastComma >= 0) {
+      normalized = normalized.replace(/\./g, '').replace(',', '.');
+    } else if (lastDot >= 0 && !/^\d{1,3}(?:\.\d{3})+$/.test(normalized)) {
+      if ((normalized.match(/\./g) ?? []).length > 1) return NaN;
+    } else {
+      normalized = normalized.replace(/\./g, '');
+    }
+    if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) return NaN;
+    const amount = Number(normalized);
+    return Number.isSafeInteger(Math.round(amount * 100)) ? Math.round(amount * 100) : NaN;
   }
 
   function sumType(transactions, type) {

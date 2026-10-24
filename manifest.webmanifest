@@ -4,12 +4,12 @@
   "short_name": "Casa em Dia",
   "description": "Organize as finanças da sua casa em um só lugar.",
   "lang": "pt-BR",
-  "start_url": "./casa-em-dia-prototype.html",
+  "start_url": "./casa-em-dia.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#f2f2f7",
-  "theme_color": "#007aff",
+  "background_color": "#f5f7fa",
+  "theme_color": "#6258d7",
   "icons": [
     {
       "src": "./icon-192.png",

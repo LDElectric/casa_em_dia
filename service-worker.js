@@ -1,9 +1,10 @@
-const CACHE_NAME = 'casa-em-dia-v5';
+const CACHE_NAME = 'casa-em-dia-v10';
 const APP_SHELL = [
   './',
   './index.html',
-  './casa-em-dia-prototype.html',
+  './casa-em-dia.html',
   './app.js',
+  './card-statement.mjs',
   './supabase-config.js',
   './manifest.webmanifest',
   './icon.svg',
@@ -41,7 +42,7 @@ self.addEventListener('fetch', event => {
     event.respondWith(
       fetch(event.request).catch(async () =>
           (await caches.match(event.request)) ||
-          caches.match('./casa-em-dia-prototype.html')
+          caches.match('./casa-em-dia.html')
       )
     );
     return;

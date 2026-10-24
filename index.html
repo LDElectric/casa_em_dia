@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#f2f6ff" />
+  <meta name="theme-color" content="#f5f7fa" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Casa em Dia" />
   <link rel="icon" href="./icon-192.png" type="image/png" />
@@ -117,10 +117,10 @@
     <p class="tagline">Suas finanças da casa, organizadas em um só lugar.</p>
     <div class="loading"><span class="spinner" aria-hidden="true"></span><span>Abrindo seu espaço...</span></div>
     <div class="track" aria-hidden="true"></div>
-    <noscript><p><a href="./casa-em-dia-prototype.html">Continuar para o Casa em Dia</a></p></noscript>
+    <noscript><p><a href="./casa-em-dia.html">Continuar para o Casa em Dia</a></p></noscript>
   </main>
   <script>
-    const appUrl = new URL('./casa-em-dia-prototype.html', window.location.href);
+    const appUrl = new URL('./casa-em-dia.html', window.location.href);
     appUrl.search = window.location.search;
     appUrl.hash = window.location.hash;
     window.location.replace(appUrl.href);

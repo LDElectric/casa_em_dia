@@ -7,8 +7,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Casa em Dia" />
   <meta name="description" content="Organize as finanças da sua casa em um só lugar." />
-  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
-  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f5f7fa" media="(prefers-color-scheme: light)" />
   <title>Casa em Dia</title>
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icon-192.png" type="image/png" />
@@ -33,30 +33,30 @@
     }
 
     :root, [data-theme="light"] {
-      --bg: #f2f2f7; --bg-elevated: #ffffff; --bg-secondary: #e5e5ea; --bg-tertiary: #f2f2f7;
-      --text: #000; --text-secondary: #3c3c43; --text-tertiary: #8e8e93;
-      --separator: rgba(60,60,67,0.12); --accent: #007aff; --accent-soft: rgba(0,122,255,0.12);
-      --green: #34c759; --red: #ff3b30; --orange: #ff9500; --purple: #af52de;
-      --card-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.03);
-      --tab-bar-bg: rgba(255,255,255,0.88); --nav-bg: rgba(242,242,247,0.85);
-      --desktop-max: 1120px;
+      --bg: #f5f7fa; --bg-elevated: #ffffff; --bg-secondary: #edf0f5; --bg-tertiary: #e4e8f0;
+      --text: #192230; --text-secondary: #465264; --text-tertiary: #738094;
+      --separator: rgba(37,49,67,0.1); --accent: #6258d7; --accent-soft: rgba(98,88,215,0.12);
+      --green: #16866b; --red: #d64f5d; --orange: #c47a20; --purple: #7969de;
+      --card-shadow: 0 2px 8px rgba(24,34,48,0.04), 0 12px 28px rgba(24,34,48,0.035);
+      --tab-bar-bg: rgba(255,255,255,0.9); --nav-bg: rgba(245,247,250,0.88);
+      --desktop-max: 1240px;
     }
     [data-theme="dark"] {
-      --bg: #000; --bg-elevated: #1c1c1e; --bg-secondary: #2c2c2e; --bg-tertiary: #3a3a3c;
-      --text: #fff; --text-secondary: #ebebf5; --text-tertiary: #8e8e93;
-      --separator: rgba(84,84,88,0.65); --accent: #0a84ff; --accent-soft: rgba(10,132,255,0.18);
-      --green: #30d158; --red: #ff453a; --orange: #ff9f0a; --purple: #bf5af2;
-      --card-shadow: 0 1px 3px rgba(0,0,0,0.3);
-      --tab-bar-bg: rgba(28,28,30,0.88); --nav-bg: rgba(0,0,0,0.7);
+      --bg: #0d1117; --bg-elevated: #171d26; --bg-secondary: #222a36; --bg-tertiary: #2b3543;
+      --text: #f2f5fa; --text-secondary: #c2cbd8; --text-tertiary: #8996a9;
+      --separator: rgba(185,198,216,0.12); --accent: #a69cff; --accent-soft: rgba(166,156,255,0.16);
+      --green: #55d6ad; --red: #ff7b83; --orange: #ffc16b; --purple: #b4a8ff;
+      --card-shadow: 0 8px 24px rgba(0,0,0,0.18);
+      --tab-bar-bg: rgba(23,29,38,0.92); --nav-bg: rgba(13,17,23,0.88);
     }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
-        --bg: #000; --bg-elevated: #1c1c1e; --bg-secondary: #2c2c2e; --bg-tertiary: #3a3a3c;
-        --text: #fff; --text-secondary: #ebebf5; --text-tertiary: #8e8e93;
-        --separator: rgba(84,84,88,0.65); --accent: #0a84ff; --accent-soft: rgba(10,132,255,0.18);
-        --green: #30d158; --red: #ff453a; --orange: #ff9f0a; --purple: #bf5af2;
-        --card-shadow: 0 1px 3px rgba(0,0,0,0.3);
-        --tab-bar-bg: rgba(28,28,30,0.88); --nav-bg: rgba(0,0,0,0.7);
+        --bg: #0d1117; --bg-elevated: #171d26; --bg-secondary: #222a36; --bg-tertiary: #2b3543;
+        --text: #f2f5fa; --text-secondary: #c2cbd8; --text-tertiary: #8996a9;
+        --separator: rgba(185,198,216,0.12); --accent: #a69cff; --accent-soft: rgba(166,156,255,0.16);
+        --green: #55d6ad; --red: #ff7b83; --orange: #ffc16b; --purple: #b4a8ff;
+        --card-shadow: 0 8px 24px rgba(0,0,0,0.18);
+        --tab-bar-bg: rgba(23,29,38,0.92); --nav-bg: rgba(13,17,23,0.88);
       }
     }
 
@@ -180,6 +180,11 @@
     }
     .control-summary span { display: block; color: var(--text-tertiary); font-size: 11px; margin-bottom: 6px; }
     .control-summary strong { display: block; font-size: clamp(13px, 3.5vw, 17px); font-variant-numeric: tabular-nums; }
+    .control-summary .summary-detail {
+      display: block; margin-top: 6px; color: var(--text-tertiary);
+      font-size: 10px; line-height: 1.35; font-weight: 500;
+    }
+    .control-summary .balance .summary-detail { color: rgba(255,255,255,0.82); font-size: 11px; }
     .control-summary .balance strong { color: var(--accent); }
     .control-group { margin: 18px 0 22px; background: var(--bg-elevated); border-radius: 14px; box-shadow: var(--card-shadow); overflow: hidden; }
     .control-group-heading {
@@ -217,10 +222,77 @@
       border-top: 1px solid var(--separator);
     }
     .control-quick-add .form-input { min-width: 0; margin: 0; padding: 10px; font-size: 14px; }
-    .control-quick-add button { padding: 10px 12px; white-space: nowrap; }
+    .control-quick-add button { grid-column: 1 / -1; padding: 10px 12px; white-space: nowrap; }
+    .control-quick-add .control-repeat-option { grid-column: 1 / -1; }
+    .control-repeat-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-secondary);
+      font-size: 13px;
+      line-height: 1.4;
+      cursor: pointer;
+    }
+    .control-repeat-option input { width: 17px; height: 17px; accent-color: var(--accent); }
     .control-copy-button { width: 100%; margin: 0 0 12px; }
+    .payment-card-tile {
+      display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
+      gap: 14px; margin: 12px; padding: 14px;
+      border: 1px solid var(--separator); border-radius: 14px;
+      background: var(--bg-elevated);
+    }
+    .payment-card-info, .payment-card-details { min-width: 0; }
+    .payment-card-identity { display: flex; align-items: center; gap: 11px; min-width: 0; }
+    .payment-card-icon {
+      display: grid; place-items: center; flex: 0 0 38px; height: 38px;
+      border-radius: 12px; background: var(--accent-soft); font-size: 19px;
+    }
+    .payment-card-details .title { font-size: 14px; font-weight: 650; overflow-wrap: anywhere; }
+    .payment-card-details .subtitle { margin-top: 3px; color: var(--text-tertiary); font-size: 12px; }
+    .payment-card-statement {
+      display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 10px;
+      margin: 10px 0 0 49px;
+    }
+    .payment-card-statement strong { font-size: 16px; font-variant-numeric: tabular-nums; }
+    .payment-card-statement span, .payment-card-statement.empty { color: var(--text-tertiary); font-size: 11px; }
+    .payment-card-actions { display: flex; flex-direction: column; align-items: stretch; gap: 5px; }
+    .payment-card-import {
+      padding: 8px 11px; border: 1px solid var(--separator); border-radius: 10px;
+      background: var(--bg-secondary); color: var(--accent); font: inherit;
+      font-size: 12px; font-weight: 650; white-space: nowrap; cursor: pointer;
+    }
+    .payment-card-import:hover { background: var(--accent-soft); }
+    .payment-card-history {
+      padding: 5px; border: 0; background: transparent; color: var(--text-tertiary);
+      font: inherit; font-size: 11px; cursor: pointer;
+    }
+    .card-import-dialog {
+      width: min(680px, calc(100% - 24px));
+      max-width: none;
+      max-height: min(90dvh, 900px);
+      margin: auto;
+      padding: 0;
+      border: 1px solid var(--separator);
+      border-radius: 20px;
+      background: var(--bg-elevated);
+      color: var(--text);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, .28);
+    }
+    .card-import-dialog::backdrop { background: rgba(0, 0, 0, .55); backdrop-filter: blur(3px); }
+    .card-import-dialog-content { max-height: min(90dvh, 900px); overflow-y: auto; padding: 18px; }
+    .card-import-dialog-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+    .card-import-dialog-header .section-title { padding: 0; margin: 4px 0; color: var(--text); font-size: 18px; }
+    .card-import-dialog-header .helper { margin: 0 0 14px; text-align: left; }
+    .card-import-dialog .form-group { margin-bottom: 14px; }
+    .card-import-dialog .helper { line-height: 1.45; }
+    .card-import-preview { margin-top: 18px; padding: 14px; background: var(--bg-secondary); }
+    .card-import-preview .section-title { padding: 0; }
     .control-card-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; }
     .control-card-row + .control-card-row { border-top: 1px solid var(--separator); }
+    .control-card-info {
+      min-width: 0; flex: 1; padding: 0; border: 0; background: transparent;
+      color: inherit; text-align: left; font: inherit; cursor: pointer;
+    }
     .control-card-row .title { font-size: 14px; font-weight: 600; }
     .control-card-row .subtitle { color: var(--text-tertiary); font-size: 12px; margin-top: 3px; }
     .control-card-item { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--separator); }
@@ -447,8 +519,17 @@
     .emergency-progress .fill { height: 100%; background: var(--green); border-radius: 4px; }
 
     .recurring-tag {
+      display: inline-block; width: fit-content; margin-top: 5px;
       font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 6px;
       background: var(--bg-secondary); color: var(--text-tertiary);
+    }
+    .recurring-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+    .statement-classification {
+      display: inline-block; width: fit-content; padding: 3px 7px; border-radius: 7px;
+      background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 600;
+    }
+    .statement-classification.needs-review {
+      background: rgba(255,149,0,0.12); color: var(--orange);
     }
 
     .desktop-grid { display: block; }
@@ -543,6 +624,189 @@
       .control-row-actions { gap: 0; }
       .control-row-actions button { padding: 7px 5px; }
       .control-row-actions .save { font-size: 11px; }
+      .payment-card-tile { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin: 8px; padding: 11px; }
+      .payment-card-icon { flex-basis: 34px; height: 34px; }
+      .payment-card-statement { margin-left: 45px; }
+      .payment-card-import { padding: 8px; font-size: 11px; }
+    }
+
+    body { background: var(--bg); color: var(--text); }
+    .auth-screen {
+      background:
+        radial-gradient(ellipse at 50% 0, var(--accent-soft), transparent 42%),
+        var(--bg);
+    }
+    .auth-card, .modal-card {
+      border: 1px solid var(--separator);
+      border-radius: 24px;
+      box-shadow: var(--card-shadow);
+    }
+    .auth-card h1 { letter-spacing: -0.7px; }
+    .auth-card p, .modal-card p { color: var(--text-secondary); }
+    .desktop-header {
+      padding-inline: max(24px, calc((100vw - 1240px) / 2));
+      background: var(--bg-elevated);
+      border-color: var(--separator);
+    }
+    .desktop-header .logo { letter-spacing: -0.6px; }
+    .desktop-header .logo span { color: var(--accent); }
+    .desktop-nav button { border-radius: 12px; }
+    .desktop-nav button.active { background: var(--accent-soft); color: var(--accent); }
+    .nav-title { letter-spacing: -1px; }
+    .section { padding-top: 18px; }
+    .section-title {
+      color: var(--text-tertiary);
+      font-size: 11px;
+      letter-spacing: 0.8px;
+    }
+    .card, .control-group, .kpi-card, .chart-card, .list, .settings-group {
+      border: 1px solid var(--separator);
+      border-radius: 18px;
+      box-shadow: var(--card-shadow);
+    }
+    .control-summary {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .control-summary > div {
+      padding: 15px;
+      border-color: var(--separator);
+      border-radius: 16px;
+      box-shadow: var(--card-shadow);
+    }
+    .control-summary .balance {
+      grid-column: 1 / -1;
+      order: -1;
+      display: grid;
+      align-content: center;
+      min-height: 132px;
+      padding: 21px 20px;
+      overflow: hidden;
+      position: relative;
+      border: 0;
+      border-radius: 22px;
+      background: linear-gradient(125deg, #5148bd, #7669e5 62%, #9c87ee);
+      color: #fff;
+      box-shadow: 0 12px 28px rgba(98,88,215,0.25);
+    }
+    .control-summary .balance::after {
+      content: "";
+      position: absolute;
+      width: 190px;
+      height: 190px;
+      right: -46px;
+      top: -88px;
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 50%;
+      box-shadow: 0 0 0 24px rgba(255,255,255,0.05), 0 0 0 50px rgba(255,255,255,0.04);
+    }
+    .control-summary .balance span,
+    .control-summary .balance strong { position: relative; z-index: 1; color: #fff; }
+    .control-summary .balance span { font-size: 13px; opacity: 0.82; }
+    .control-summary .balance strong {
+      font-size: clamp(30px, 7vw, 38px);
+      letter-spacing: -1.1px;
+    }
+    .control-summary > div:not(.balance) span { font-size: 12px; }
+    .control-summary > div:not(.balance) strong { font-size: clamp(15px, 3.7vw, 18px); }
+    .control-group { margin-block: 14px 16px; }
+    .control-group-heading { padding: 16px; }
+    .control-group-heading h2 { display: flex; align-items: center; gap: 9px; }
+    .group-icon {
+      display: inline-grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      flex: 0 0 auto;
+      border-radius: 11px;
+      background: var(--accent-soft);
+      font-size: 16px;
+    }
+    .credit-card-group {
+      border-color: rgba(121,105,222,0.32);
+      background: linear-gradient(145deg, var(--bg-elevated), var(--accent-soft));
+    }
+    .credit-card-group .group-icon { background: rgba(121,105,222,0.18); }
+    .credit-card-group .control-group-total { color: var(--accent); font-weight: 700; }
+    .info-box {
+      border: 1px solid var(--accent-soft);
+      border-radius: 14px;
+      line-height: 1.55;
+    }
+    .month-selector button {
+      width: 36px;
+      height: 36px;
+      border: 1px solid var(--separator);
+      background: var(--bg-elevated);
+      color: var(--accent);
+    }
+    .list-item { gap: 12px; padding: 14px; }
+    .list-item .icon { border-radius: 13px; }
+    .list-item .title { font-weight: 600; }
+    .list-item .subtitle { line-height: 1.4; }
+    .transaction-row .info { overflow: hidden; }
+    .transaction-row .subtitle { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .transaction-attribution { display: flex; align-items: center; gap: 5px; flex: 0 1 auto; min-width: 0; }
+    .transaction-author-name {
+      max-width: 70px;
+      overflow: hidden;
+      color: var(--text-tertiary);
+      font-size: 11px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .transaction-avatar {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      flex: 0 0 30px;
+      border: 2px solid var(--bg-elevated);
+      border-radius: 50%;
+      background: #6258d7;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      box-shadow: 0 0 0 1px var(--separator);
+    }
+    .transaction-avatar.member { background: #21876f; }
+    .transaction-avatar.imported {
+      border-radius: 10px;
+      background: var(--orange);
+      color: #23190a;
+      font-size: 8px;
+      letter-spacing: 0;
+    }
+    .list-item .amount { white-space: nowrap; }
+    .kpi-card, .chart-card { padding: 18px; }
+    .chart-title { letter-spacing: -0.3px; }
+    .fab {
+      background: var(--accent);
+      box-shadow: 0 8px 22px rgba(98,88,215,0.36);
+    }
+    .tab-item.active { color: var(--accent); }
+    .tab-item.active svg { filter: drop-shadow(0 2px 5px var(--accent-soft)); }
+    .primary-btn { background: var(--accent); }
+    .secondary-btn { border: 1px solid var(--separator); }
+    button, input, select { font: inherit; }
+    button:focus-visible, input:focus-visible, select:focus-visible {
+      outline: 3px solid var(--accent-soft);
+      outline-offset: 2px;
+    }
+    @media (min-width: 768px) {
+      .nav-header { padding-inline: 32px; }
+      .section { padding-block: 18px; }
+      .control-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .control-summary .balance { grid-column: 1 / -1; }
+    }
+    @media (max-width: 380px) {
+      .transaction-avatar { width: 27px; height: 27px; flex-basis: 27px; }
+      .transaction-author-name { display: none; }
+      .transaction-row { gap: 9px; padding-inline: 11px; }
+      .transaction-row .icon { width: 34px; height: 34px; }
+      .transaction-row .amount { font-size: 14px; }
     }
 
   </style>
@@ -658,53 +922,61 @@
             <button type="button" onclick="changeControlMonth(1)" aria-label="Próximo mês">›</button>
           </div>
           <div class="control-summary">
-            <div><span>Receitas</span><strong id="month-income">R$ 0,00</strong></div>
-            <div><span>Despesas</span><strong id="month-expenses">R$ 0,00</strong></div>
-            <div class="balance"><span>Saldo</span><strong id="month-balance">R$ 0,00</strong></div>
+            <div><span>Receitas</span><strong id="month-income">R$ 0,00</strong><small class="summary-detail" id="month-income-detail"></small></div>
+            <div><span>Despesas</span><strong id="month-expenses">R$ 0,00</strong><small class="summary-detail" id="month-expenses-detail"></small></div>
+            <div class="balance"><span>Saldo do mês</span><strong id="month-balance">R$ 0,00</strong><small class="summary-detail" id="month-balance-detail"></small></div>
           </div>
-          <div class="info-box">Preencha os valores mensais e expanda os grupos para ver as compras do cartão. Parcelas futuras são previstas automaticamente; não lance a mesma fatura como outra despesa.</div>
+          <div class="info-box">O resumo do mês soma o que precisa sair da receita: contas e gastos lançados + total das faturas com vencimento no mês. As compras do cartão aparecem por categoria nos grupos e insights para análise, mas não são somadas de novo ao caixa.</div>
           <button class="secondary-btn control-copy-button" id="copy-control-items" type="button">Trazer os itens do mês anterior</button>
           <p class="helper" id="monthly-control-message" role="status" aria-live="polite"></p>
           <details class="control-group" aria-labelledby="control-income-title">
-            <summary class="control-group-heading"><h2 id="control-income-title">Receitas</h2><span class="control-group-total" id="control-income-total">R$ 0,00</span></summary>
+            <summary class="control-group-heading"><h2 id="control-income-title"><span class="group-icon" aria-hidden="true">💰</span>Receitas</h2><span class="control-group-total" id="control-income-total">R$ 0,00</span></summary>
             <div class="control-list" id="control-income-list"></div>
             <form class="control-quick-add" data-control-group="income">
               <input class="form-input" name="item_name" maxlength="120" placeholder="Nome da receita" aria-label="Nome da receita" required />
               <input class="form-input" name="amount" inputmode="decimal" placeholder="Valor" aria-label="Valor da receita" />
+              <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" /> Repetir nos meses seguintes</label>
+              <label class="control-repeat-option control-variable-option"><input name="variable_amount" type="checkbox" /> Valor varia por mês (ex.: freelance)</label>
               <button class="primary-btn" type="submit">Adicionar</button>
             </form>
           </details>
           <details class="control-group" aria-labelledby="control-fixed-title">
-            <summary class="control-group-heading"><h2 id="control-fixed-title">Gastos fixos</h2><span class="control-group-total" id="control-fixed-total">R$ 0,00</span></summary>
+            <summary class="control-group-heading"><h2 id="control-fixed-title"><span class="group-icon" aria-hidden="true">🏠</span>Gastos fixos</h2><span class="control-group-total" id="control-fixed-total">R$ 0,00</span></summary>
             <div class="control-list" id="control-fixed-list"></div>
             <form class="control-quick-add" data-control-group="fixed">
               <input class="form-input" name="item_name" maxlength="120" placeholder="Nome da despesa" aria-label="Nome da despesa fixa" required />
               <input class="form-input" name="amount" inputmode="decimal" placeholder="Valor" aria-label="Valor da despesa fixa" />
+              <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" /> Repetir nos meses seguintes</label>
+              <label class="control-repeat-option control-variable-option"><input name="variable_amount" type="checkbox" /> Valor varia por mês (ex.: consumo)</label>
               <button class="primary-btn" type="submit">Adicionar</button>
             </form>
           </details>
           <details class="control-group" aria-labelledby="control-variable-title">
-            <summary class="control-group-heading"><h2 id="control-variable-title">Gastos variáveis</h2><span class="control-group-total" id="control-variable-total">R$ 0,00</span></summary>
+            <summary class="control-group-heading"><h2 id="control-variable-title"><span class="group-icon" aria-hidden="true">🛒</span>Gastos variáveis</h2><span class="control-group-total" id="control-variable-total">R$ 0,00</span></summary>
             <div class="control-list" id="control-variable-list"></div>
             <form class="control-quick-add" data-control-group="variable">
               <input class="form-input" name="item_name" maxlength="120" placeholder="Nome da despesa" aria-label="Nome da despesa variável" required />
               <input class="form-input" name="amount" inputmode="decimal" placeholder="Valor" aria-label="Valor da despesa variável" />
+              <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" /> Repetir nos meses seguintes</label>
+              <label class="control-repeat-option control-variable-option"><input name="variable_amount" type="checkbox" /> Valor varia por mês (ex.: consumo)</label>
               <button class="primary-btn" type="submit">Adicionar</button>
             </form>
           </details>
           <details class="control-group" aria-labelledby="control-additional-title">
-            <summary class="control-group-heading"><h2 id="control-additional-title">Gastos adicionais</h2><span class="control-group-total" id="control-additional-total">R$ 0,00</span></summary>
+            <summary class="control-group-heading"><h2 id="control-additional-title"><span class="group-icon" aria-hidden="true">✨</span>Gastos adicionais</h2><span class="control-group-total" id="control-additional-total">R$ 0,00</span></summary>
             <div class="control-list" id="control-additional-list"></div>
             <form class="control-quick-add" data-control-group="additional">
               <input class="form-input" name="item_name" maxlength="120" placeholder="Nome da despesa" aria-label="Nome da despesa adicional" required />
               <input class="form-input" name="amount" inputmode="decimal" placeholder="Valor" aria-label="Valor da despesa adicional" />
+              <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" /> Repetir nos meses seguintes</label>
+              <label class="control-repeat-option control-variable-option"><input name="variable_amount" type="checkbox" /> Valor varia por mês (ex.: consumo)</label>
               <button class="primary-btn" type="submit">Adicionar</button>
             </form>
           </details>
-          <details class="control-group" aria-labelledby="control-card-title">
-            <summary class="control-group-heading"><h2 id="control-card-title">Faturas de cartão</h2><span class="control-group-total" id="control-cards-total">R$ 0,00</span></summary>
+          <details class="control-group credit-card-group" open aria-labelledby="control-card-title">
+            <summary class="control-group-heading"><h2 id="control-card-title"><span class="group-icon" aria-hidden="true">💳</span>Faturas de cartão</h2><span class="control-group-total" id="control-cards-total">R$ 0,00</span></summary>
             <div class="control-list" id="control-cards-list"></div>
-            <p class="helper control-group-empty">O total líquido de cada fatura aparece aqui. As compras são detalhadas nos grupos acima.</p>
+            <p class="helper control-group-empty">Use “Importar fatura” no cartão desejado. O total aparece aqui, e as compras entram nos grupos acima.</p>
           </details>
         </div>
       </div>
@@ -774,9 +1046,9 @@
       </div>
       <div class="content">
         <div class="section">
-          <div class="info-box">Organize receitas e despesas que se repetem. Os itens cadastrados aqui ainda não geram lançamentos automaticamente.</div>
-          <div class="section-title">Receitas fixas</div>
-          <div class="list" id="recurring-income" style="margin-bottom:20px"><div class="empty-state">Nenhuma receita fixa cadastrada.</div></div>
+          <div class="info-box">Modelos fixos aparecem nos próximos meses automaticamente. Para contas de consumo e receitas como freelance, marque o valor como variável: cada mês começa sem valor real e mantém o histórico separado.</div>
+          <div class="section-title">Receitas fixas e variáveis</div>
+          <div class="list" id="recurring-income" style="margin-bottom:20px"><div class="empty-state">Nenhuma receita recorrente cadastrada.</div></div>
           <div class="section-title">Despesas mensais</div>
           <div class="list" id="recurring-monthly" style="margin-bottom:20px"><div class="empty-state">Nenhuma despesa mensal cadastrada.</div></div>
           <div class="section-title">Despesas anuais</div>
@@ -785,10 +1057,10 @@
         </div>
         <div class="section" id="credit-card-section">
           <div class="section-title">Cartões e faturas</div>
-          <div class="info-box">Cadastre um cartão individual ou uma conta geral para vários cartões que chegam em uma única fatura. Importe o CSV consolidado e identifique quem fez cada compra, se quiser. Pagar a fatura não cria uma segunda despesa.</div>
+          <div class="info-box">Importe CSV, PDF com texto selecionável ou OFX. O total em aberto da fatura entra como despesa no mês do vencimento; cada compra pode ser classificada para grupos e insights sem duplicar essa saída.</div>
           <form id="credit-card-form" class="card">
-            <div class="form-group"><label class="form-label" for="card-label">Nome do cartão</label><input class="form-input" id="card-label" maxlength="80" placeholder="Ex.: Cartão da Maria / Nubank / Santander" required /></div>
-            <div class="form-group"><label class="form-label" for="card-provider">Operadora</label><input class="form-input" id="card-provider" maxlength="60" placeholder="Ex.: Nubank" required /></div>
+            <div class="form-group"><label class="form-label" for="card-label">Nome do cartão</label><input class="form-input" id="card-label" maxlength="80" placeholder="Ex.: Cartão da Maria / Cartão principal" required /></div>
+            <div class="form-group"><label class="form-label" for="card-provider">Operadora</label><input class="form-input" id="card-provider" maxlength="60" placeholder="Ex.: Visa, Mastercard, banco" required /></div>
             <div class="form-group"><label class="form-label" for="card-titular">Titular / responsável (opcional)</label><input class="form-input" id="card-titular" maxlength="80" placeholder="Ex.: Maria" /></div>
             <div class="form-group"><label class="form-label" for="card-credit-limit">Limite do cartão (opcional)</label><div class="amount-input-wrap"><span class="currency">R$</span><input class="form-input" id="card-credit-limit" inputmode="decimal" placeholder="0,00" /></div></div>
             <button class="secondary-btn" type="submit" id="save-credit-card">Cadastrar cartão</button>
@@ -796,20 +1068,6 @@
             <p class="helper" id="credit-card-message">Cadastre um cartão por pessoa. Depois, anexe a fatura do cartão correspondente.</p>
           </form>
           <div class="list" id="credit-card-list"><div class="empty-state">Nenhum cartão cadastrado.</div></div>
-          <div class="section-title">Importar fatura CSV</div>
-          <form id="card-import-form" class="card">
-            <div class="form-group"><label class="form-label" for="import-card">Cartão desta fatura</label><select class="form-input" id="import-card" required><option value="">Cadastre e selecione um cartão</option></select></div>
-            <div class="form-group"><label class="form-label" for="statement-csv">Arquivo da fatura (CSV)</label><input class="form-input" id="statement-csv" type="file" accept=".csv,text/csv" required /><span class="helper">Lido no seu dispositivo; só é enviado ao confirmar a prévia.</span></div>
-            <div class="form-group"><label class="form-label" for="statement-due-date">Vencimento</label><input class="form-input" id="statement-due-date" type="date" required /></div>
-            <button class="secondary-btn" type="submit">Analisar e conferir fatura</button>
-            <p class="helper" id="card-import-message"></p>
-          </form>
-          <div class="card" id="card-import-preview" hidden>
-            <div class="section-title">Prévia — nada será salvo até confirmar</div>
-            <p class="helper" id="card-import-summary"></p>
-            <div class="list" id="card-import-rows"></div>
-            <button class="primary-btn" id="confirm-card-import" type="button" disabled>Confirmar atualização desta fatura</button>
-          </div>
           <div class="section-title">Faturas abertas e histórico</div>
           <div class="list" id="card-statement-list"><div class="empty-state">As faturas importadas aparecerão aqui.</div></div>
           <div class="section-title">Parcelas futuras previstas</div>
@@ -892,6 +1150,42 @@
       </div>
     </div>
 
+    <dialog class="card-import-dialog" id="card-import-dialog" aria-labelledby="card-import-dialog-title">
+      <div class="card-import-dialog-content">
+        <header class="card-import-dialog-header">
+          <div>
+            <div class="section-title" id="card-import-dialog-title">Importar fatura</div>
+            <p class="helper" id="card-import-card-label"></p>
+          </div>
+          <button class="sheet-close" id="close-card-import" type="button" aria-label="Fechar">×</button>
+        </header>
+        <form id="card-import-form">
+          <div class="form-group">
+            <label class="form-label" for="statement-csv">1. Selecione o arquivo CSV, PDF ou OFX</label>
+            <input class="form-input" id="statement-csv" type="file" accept=".csv,.pdf,.ofx,text/csv,application/pdf,application/x-ofx" required />
+            <span class="helper">O vencimento pode ser sugerido pelo nome do arquivo, por exemplo Fatura_2026-11-07.ofx. O arquivo é processado neste dispositivo. PDFs digitalizados como imagem não são compatíveis.</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="statement-due-date">2. Confira o vencimento da fatura</label>
+            <input class="form-input" id="statement-due-date" type="date" required />
+          </div>
+          <button class="primary-btn" type="submit">Analisar fatura</button>
+          <p class="helper" id="card-import-message" role="status" aria-live="polite"></p>
+        </form>
+        <section class="card card-import-preview" id="card-import-preview" hidden aria-labelledby="card-import-preview-title">
+          <div class="section-title" id="card-import-preview-title">3. Confira e salve</div>
+          <p class="helper" id="card-import-summary"></p>
+          <div class="form-group">
+            <label class="form-label" for="statement-total">Total cobrado na fatura</label>
+            <div class="amount-input-wrap"><span class="currency">R$</span><input class="form-input" id="statement-total" inputmode="decimal" placeholder="0,00" /></div>
+            <span class="helper" id="statement-total-note"></span>
+          </div>
+          <div class="list" id="card-import-rows"></div>
+          <button class="primary-btn" id="confirm-card-import" type="button" disabled>Salvar fatura</button>
+        </section>
+      </div>
+    </dialog>
+
     <button class="fab" onclick="focusControlForm()" aria-label="Adicionar item ao mês">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
     </button>
@@ -946,7 +1240,11 @@
       </div>
       <div class="form-group">
         <label class="form-label" for="transaction-amount">Valor</label>
-        <div class="amount-input-wrap"><span class="currency">R$</span><input type="text" class="form-input" id="transaction-amount" placeholder="0,00" inputmode="decimal" required /></div>
+      <div class="amount-input-wrap"><span class="currency">R$</span><input type="text" class="form-input" id="transaction-amount" placeholder="0,00" inputmode="decimal" /></div>
+      </div>
+      <div class="form-group" id="entry-variable-amount-wrap" hidden>
+        <label class="control-repeat-option"><input id="entry-variable-amount" type="checkbox" /> Valor varia a cada mês/ano (ex.: água, luz ou freelance)</label>
+        <div class="helper">O valor real fica separado em cada período; os meses anteriores não mudam.</div>
       </div>
       <div class="form-group">
         <label class="form-label" for="transaction-title">Descrição</label>
@@ -983,12 +1281,22 @@
   <script src="./supabase-config.js"></script>
   <script type="module" src="./app.js"></script>
   <script>
+    function updateEntryAmountLabel() {
+      const recurring = document.querySelector('.freq-btn.active')?.dataset.freq !== 'once';
+      const variable = document.getElementById('entry-variable-amount').checked;
+      const variableWrap = document.getElementById('entry-variable-amount-wrap');
+      const amount = document.getElementById('transaction-amount');
+      variableWrap.hidden = !recurring;
+      amount.required = !recurring || !variable;
+      amount.placeholder = recurring && variable ? 'Valor real deste mês (opcional)' : '0,00';
+    }
+
     function setTheme(t) {
       document.documentElement.setAttribute('data-theme', t);
       document.querySelectorAll('.theme-opt').forEach(b => b.classList.toggle('active', b.dataset.theme === t));
       const meta = document.querySelector('meta[name="theme-color"]');
       const dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
-      meta.setAttribute('content', dark ? '#000' : '#f2f2f7');
+      meta.setAttribute('content', dark ? '#0d1117' : '#f5f7fa');
       setTimeout(updateChartsTheme, 50);
     }
     function toggleTheme() {
@@ -1046,12 +1354,14 @@
       document.getElementById('entry-budget-group-wrap').hidden = !exp;
       document.getElementById('payment-method-wrap').hidden = !exp;
       document.getElementById('group-card-tip').style.display = 'none';
+      updateEntryAmountLabel();
       window.dispatchEvent(new CustomEvent('entry-type-changed'));
     }
     function setFreq(f) {
       document.querySelectorAll('.freq-btn').forEach(b => b.classList.toggle('active', b.dataset.freq === f));
       document.getElementById('group-variable').style.display = f === 'monthly' ? 'block' : 'none';
       document.getElementById('group-yearly').style.display = f === 'yearly' ? 'block' : 'none';
+      updateEntryAmountLabel();
     }
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
 
@@ -1060,13 +1370,13 @@
       const dark = document.documentElement.getAttribute('data-theme') === 'dark' ||
         (document.documentElement.getAttribute('data-theme') !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
       return {
-        text: dark ? '#ebebf5' : '#3c3c43',
-        grid: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-        green: dark ? '#30d158' : '#34c759',
-        red: dark ? '#ff453a' : '#ff3b30',
-        accent: dark ? '#0a84ff' : '#007aff',
-        orange: dark ? '#ff9f0a' : '#ff9500',
-        purple: dark ? '#bf5af2' : '#af52de'
+        text: dark ? '#c2cbd8' : '#465264',
+        grid: dark ? 'rgba(185,198,216,0.12)' : 'rgba(37,49,67,0.1)',
+        green: dark ? '#55d6ad' : '#16866b',
+        red: dark ? '#ff7b83' : '#d64f5d',
+        accent: dark ? '#a69cff' : '#6258d7',
+        orange: dark ? '#ffc16b' : '#c47a20',
+        purple: dark ? '#b4a8ff' : '#7969de'
       };
     }
     function initCharts() {
