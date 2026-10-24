@@ -729,6 +729,116 @@
     }
     .credit-card-group .group-icon { background: rgba(121,105,222,0.18); }
     .credit-card-group .control-group-total { color: var(--accent); font-weight: 700; }
+
+    /* Banner de Fatura Aberta */
+    .upcoming-statement-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      background: linear-gradient(135deg, rgba(98, 88, 215, 0.14), rgba(166, 156, 255, 0.08));
+      border: 1px solid rgba(98, 88, 215, 0.28);
+      border-radius: 18px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 4px 16px rgba(98,88,215,0.12);
+    }
+    .statement-banner-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .statement-banner-icon {
+      width: 42px; height: 42px; border-radius: 14px;
+      background: var(--accent-soft); display: grid; place-items: center;
+      font-size: 20px; flex-shrink: 0;
+    }
+    .statement-banner-info { min-width: 0; }
+    .statement-banner-title { font-size: 14px; font-weight: 650; color: var(--text); }
+    .statement-banner-subtitle { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+    .statement-banner-btn {
+      padding: 9px 15px; font-size: 12px; font-weight: 650; border-radius: 11px;
+      background: var(--accent); color: #fff; border: none; cursor: pointer;
+      white-space: nowrap; flex-shrink: 0; transition: transform .12s ease, opacity .12s ease;
+    }
+    .statement-banner-btn:active { transform: scale(0.97); }
+
+    /* Barra de Comprometimento de Renda */
+    .income-commitment-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--separator);
+      border-radius: 18px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      box-shadow: var(--card-shadow);
+    }
+    .income-commitment-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .income-commitment-label { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+    .income-commitment-percentage { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .income-commitment-bar-bg {
+      width: 100%; height: 8px; border-radius: 999px; background: var(--bg-tertiary);
+      overflow: hidden; margin-bottom: 9px;
+    }
+    .income-commitment-bar-fill {
+      height: 100%; border-radius: 999px; transition: width .4s cubic-bezier(0.16, 1, 0.3, 1), background-color .4s ease;
+      background: var(--accent);
+    }
+    .income-commitment-bar-fill.safe { background: var(--green); }
+    .income-commitment-bar-fill.moderate { background: var(--orange); }
+    .income-commitment-bar-fill.danger { background: var(--red); }
+    .income-commitment-footer {
+      display: flex; justify-content: space-between; align-items: center; font-size: 11.5px; color: var(--text-tertiary);
+    }
+    .free-badge {
+      display: inline-block; padding: 3px 9px; border-radius: 8px; font-weight: 650;
+      background: rgba(85, 214, 173, 0.16); color: var(--green);
+    }
+    .free-badge.negative {
+      background: rgba(255, 123, 131, 0.16); color: var(--red);
+    }
+
+    /* Card Top Categorias e Frequência */
+    .spending-breakdown-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--separator);
+      border-radius: 18px;
+      padding: 16px;
+      margin-bottom: 18px;
+      box-shadow: var(--card-shadow);
+    }
+    .breakdown-header {
+      display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px;
+    }
+    .breakdown-title { font-size: 15px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
+    .breakdown-subtitle { font-size: 12px; color: var(--text-tertiary); }
+    .breakdown-list { display: flex; flex-direction: column; gap: 12px; }
+    .breakdown-row { display: flex; flex-direction: column; gap: 5px; }
+    .breakdown-row-top { display: flex; justify-content: space-between; align-items: center; font-size: 13.5px; }
+    .breakdown-cat-name { font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 7px; }
+    .breakdown-cat-count { font-size: 11px; font-weight: 400; color: var(--text-tertiary); }
+    .breakdown-cat-values { font-weight: 650; font-variant-numeric: tabular-nums; }
+    .breakdown-cat-pct { font-size: 11px; color: var(--text-tertiary); margin-left: 4px; font-weight: 400; }
+    .breakdown-bar-bg { width: 100%; height: 7px; border-radius: 999px; background: var(--bg-tertiary); overflow: hidden; }
+    .breakdown-bar-fill { height: 100%; border-radius: 999px; background: var(--accent); transition: width .4s cubic-bezier(0.16, 1, 0.3, 1); }
+
+    /* Projeção dos Próximos Meses */
+    .forecast-timeline { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+    .forecast-month-card {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px;
+      padding: 12px 14px; background: var(--bg-secondary); border-radius: 14px;
+      border: 1px solid var(--separator); cursor: pointer; transition: background .15s ease;
+    }
+    .forecast-month-card:hover { background: var(--bg-tertiary); }
+    .forecast-month-info { min-width: 0; }
+    .forecast-month-name { font-size: 14px; font-weight: 650; text-transform: capitalize; }
+    .forecast-month-meta { font-size: 11px; color: var(--text-tertiary); margin-top: 3px; }
+    .forecast-month-balance { text-align: right; min-width: 0; }
+    .forecast-month-balance strong { font-size: 14.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .forecast-tag { display: block; font-size: 10.5px; font-weight: 650; text-transform: uppercase; margin-top: 2px; }
+    .forecast-tag.surplus { color: var(--green); }
+    .forecast-tag.deficit { color: var(--red); }
     .info-box {
       border: 1px solid var(--accent-soft);
       border-radius: 14px;
@@ -921,10 +1031,33 @@
             <span class="current" id="control-month-label">Este mês</span>
             <button type="button" onclick="changeControlMonth(1)" aria-label="Próximo mês">›</button>
           </div>
+          <div class="upcoming-statement-banner" id="upcoming-statement-banner" hidden>
+            <div class="statement-banner-left">
+              <div class="statement-banner-icon" aria-hidden="true">💳</div>
+              <div class="statement-banner-info">
+                <div class="statement-banner-title" id="statement-banner-title">Fatura em aberto</div>
+                <div class="statement-banner-subtitle" id="statement-banner-subtitle">Vence em breve</div>
+              </div>
+            </div>
+            <button class="statement-banner-btn" id="statement-banner-btn" type="button">Ver no mês ›</button>
+          </div>
           <div class="control-summary">
             <div><span>Receitas</span><strong id="month-income">R$ 0,00</strong><small class="summary-detail" id="month-income-detail"></small></div>
             <div><span>Despesas</span><strong id="month-expenses">R$ 0,00</strong><small class="summary-detail" id="month-expenses-detail"></small></div>
             <div class="balance"><span>Saldo do mês</span><strong id="month-balance">R$ 0,00</strong><small class="summary-detail" id="month-balance-detail"></small></div>
+          </div>
+          <div class="income-commitment-card" id="income-commitment-card" hidden>
+            <div class="income-commitment-header">
+              <span class="income-commitment-label">Comprometimento da receita</span>
+              <span class="income-commitment-percentage" id="income-commitment-percentage">0%</span>
+            </div>
+            <div class="income-commitment-bar-bg">
+              <div class="income-commitment-bar-fill" id="income-commitment-bar-fill" style="width: 0%"></div>
+            </div>
+            <div class="income-commitment-footer">
+              <span id="income-commitment-detail">R$ 0,00 de custos previstos</span>
+              <span class="free-badge" id="income-commitment-free">R$ 0,00 livre</span>
+            </div>
           </div>
           <div class="info-box">O resumo do mês soma o que precisa sair da receita: contas e gastos lançados + total das faturas com vencimento no mês. As compras do cartão aparecem por categoria nos grupos e insights para análise, mas não são somadas de novo ao caixa.</div>
           <button class="secondary-btn control-copy-button" id="copy-control-items" type="button">Trazer os itens do mês anterior</button>
@@ -973,10 +1106,25 @@
               <button class="primary-btn" type="submit">Adicionar</button>
             </form>
           </details>
+          <div class="spending-breakdown-card" id="spending-breakdown-card">
+            <div class="breakdown-header">
+              <div class="breakdown-title"><span aria-hidden="true">📊</span>Para onde vai o dinheiro</div>
+              <span class="breakdown-subtitle" id="breakdown-month-tag">Neste mês</span>
+            </div>
+            <div class="breakdown-list" id="spending-breakdown-list">
+              <div class="empty-state">Nenhum gasto registrado neste mês.</div>
+            </div>
+          </div>
           <details class="control-group credit-card-group" open aria-labelledby="control-card-title">
             <summary class="control-group-heading"><h2 id="control-card-title"><span class="group-icon" aria-hidden="true">💳</span>Faturas de cartão</h2><span class="control-group-total" id="control-cards-total">R$ 0,00</span></summary>
             <div class="control-list" id="control-cards-list"></div>
             <p class="helper control-group-empty">Use “Importar fatura” no cartão desejado. O total aparece aqui, e as compras entram nos grupos acima.</p>
+          </details>
+          <details class="control-group" id="future-forecast-group" open aria-labelledby="future-forecast-title">
+            <summary class="control-group-heading"><h2 id="future-forecast-title"><span class="group-icon" aria-hidden="true">🔮</span>Previsão dos próximos meses</h2><span class="control-group-total" id="future-forecast-summary">Projeção</span></summary>
+            <div class="forecast-timeline" id="forecast-timeline-list">
+              <div class="empty-state">Carregando projeção financeira...</div>
+            </div>
           </details>
         </div>
       </div>
@@ -1320,6 +1468,16 @@
       const monthKey = `${controlMonthDate.getFullYear()}-${String(controlMonthDate.getMonth() + 1).padStart(2, '0')}-01`;
       window.dispatchEvent(new CustomEvent('control-month-changed', { detail: { monthKey } }));
     }
+    function setControlMonthKey(targetMonthKey) {
+      const parts = targetMonthKey.slice(0, 7).split('-').map(Number);
+      if (parts.length === 2 && !Number.isNaN(parts[0]) && !Number.isNaN(parts[1])) {
+        controlMonthDate = new Date(parts[0], parts[1] - 1, 1);
+        const monthKey = `${controlMonthDate.getFullYear()}-${String(controlMonthDate.getMonth() + 1).padStart(2, '0')}-01`;
+        window.dispatchEvent(new CustomEvent('control-month-changed', { detail: { monthKey } }));
+      }
+    }
+    window.changeControlMonth = changeControlMonth;
+    window.setControlMonthKey = setControlMonthKey;
     function focusControlForm() {
       showScreen('home');
       document.getElementById('monthly-control-form').scrollIntoView({ behavior: 'smooth', block: 'center' });

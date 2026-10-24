@@ -2706,7 +2706,11 @@ if (!config?.url || !config?.publishableKey) {
       cardList.append(row);
     }
     document.getElementById('control-cards-total').textContent = formatMoney(cardTotal);
-    renderMonthlySummary(monthKey);
+    const summary = renderMonthlySummary(monthKey);
+    renderIncomeCommitment(summary);
+    renderUpcomingStatementBanner(monthKey);
+    renderSpendingBreakdown(monthKey);
+    renderFutureForecast(monthKey);
     document.getElementById('copy-control-items').disabled = currentRows.length > 0;
     document.getElementById('copy-control-items').textContent = currentRows.length
       ? 'Este mês já tem itens cadastrados'
@@ -2746,6 +2750,204 @@ if (!config?.url || !config?.publishableKey) {
         : 'Falta prevista no mês';
     }
     return summary;
+  }
+
+  function renderUpcomingStatementBanner(currentMonthKey) {
+    const banner = document.getElementById('upcoming-statement-banner');
+    if (!banner) return;
+    const statements = state.cardStatements
+      .filter(s => s.status !== 'paid')
+      .sort((a, b) => a.due_date.localeCompare(b.due_date));
+    if (!statements.length) {
+      banner.hidden = true;
+      return;
+    }
+    const currentPrefix = currentMonthKey.slice(0, 7);
+    const statementInMonth = statements.find(s => s.due_date.startsWith(currentPrefix));
+    const nextStatement = statementInMonth
+      || statements.find(s => s.due_date >= localDate(new Date()))
+      || statements[0];
+    if (!nextStatement) {
+      banner.hidden = true;
+      return;
+    }
+    const card = state.creditCards.find(c => c.id === nextStatement.credit_card_id);
+    const cardLabel = card?.label ?? 'Cartão';
+    const amount = nextStatement.statement_total_cents != null
+      ? Number(nextStatement.statement_total_cents)
+      : state.cardStatementItems
+        .filter(i => i.statement_id === nextStatement.id && !isCardPayment(i.title))
+        .reduce((sum, i) => sum + Number(i.amount_cents), 0);
+
+    const statementMonth = nextStatement.due_date.slice(0, 7);
+    const [, , dueMonth, dueDay] = nextStatement.due_date.match(/^(\d{4})-(\d{2})-(\d{2})/) ?? [];
+    const formattedDate = `${dueDay}/${dueMonth}`;
+    const titleEl = document.getElementById('statement-banner-title');
+    const subtitleEl = document.getElementById('statement-banner-subtitle');
+    const btnEl = document.getElementById('statement-banner-btn');
+
+    if (statementMonth === currentPrefix) {
+      titleEl.textContent = `Fatura ${cardLabel} · ${formatMoney(amount)}`;
+      subtitleEl.textContent = `Vence dia ${formattedDate} · Valor a pagar contabilizado neste mês`;
+      if (btnEl) btnEl.style.display = 'none';
+    } else {
+      const targetMonthDate = new Date(`${statementMonth}-01T12:00:00`);
+      const targetMonthName = new Intl.DateTimeFormat('pt-BR', { month: 'long' }).format(targetMonthDate);
+      titleEl.textContent = `Fatura ${cardLabel} em aberto · ${formatMoney(amount)}`;
+      subtitleEl.textContent = `Vence dia ${formattedDate} · Sai da receita de ${targetMonthName}`;
+      if (btnEl) {
+        btnEl.style.display = '';
+        btnEl.textContent = `Ver em ${targetMonthName} ›`;
+        btnEl.onclick = () => {
+          if (window.setControlMonthKey) window.setControlMonthKey(`${statementMonth}-01`);
+        };
+      }
+    }
+    banner.hidden = false;
+  }
+
+  function renderIncomeCommitment(summary) {
+    const card = document.getElementById('income-commitment-card');
+    if (!card) return;
+    const pctEl = document.getElementById('income-commitment-percentage');
+    const fillEl = document.getElementById('income-commitment-bar-fill');
+    const detailEl = document.getElementById('income-commitment-detail');
+    const freeEl = document.getElementById('income-commitment-free');
+
+    if (summary.income <= 0 && summary.expenses <= 0) {
+      card.hidden = true;
+      return;
+    }
+    card.hidden = false;
+    if (summary.income > 0) {
+      const percentage = Math.round((summary.expenses / summary.income) * 100);
+      pctEl.textContent = `${percentage}%`;
+      fillEl.style.width = `${Math.min(100, Math.max(0, percentage))}%`;
+      fillEl.className = 'income-commitment-bar-fill ' + (percentage <= 70 ? 'safe' : percentage <= 90 ? 'moderate' : 'danger');
+      detailEl.textContent = `${formatMoney(summary.expenses)} de custos previstos`;
+      const balance = summary.income - summary.expenses;
+      if (balance >= 0) {
+        freeEl.textContent = `${formatMoney(balance)} livre`;
+        freeEl.className = 'free-badge';
+      } else {
+        freeEl.textContent = `Falta ${formatMoney(Math.abs(balance))}`;
+        freeEl.className = 'free-badge negative';
+      }
+    } else {
+      pctEl.textContent = '100%+';
+      fillEl.style.width = '100%';
+      fillEl.className = 'income-commitment-bar-fill danger';
+      detailEl.textContent = `${formatMoney(summary.expenses)} de custos sem receita cadastrada`;
+      freeEl.textContent = `Falta ${formatMoney(summary.expenses)}`;
+      freeEl.className = 'free-badge negative';
+    }
+  }
+
+  function renderSpendingBreakdown(monthKey) {
+    const list = document.getElementById('spending-breakdown-list');
+    const monthTag = document.getElementById('breakdown-month-tag');
+    if (!list) return;
+    const monthDate = new Date(`${monthKey}-01T12:00:00`);
+    if (monthTag) {
+      monthTag.textContent = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(monthDate);
+    }
+    const entries = financialEntriesForMonth(monthKey).filter(item => item.transaction_type === 'expense');
+    if (!entries.length) {
+      list.innerHTML = '<div class="empty-state">Nenhum gasto ou compra registrado neste mês.</div>';
+      return;
+    }
+    const categoryTotals = new Map();
+    for (const item of entries) {
+      const cat = item.category || 'Outros';
+      const cur = categoryTotals.get(cat) || { total: 0, count: 0 };
+      cur.total += Number(item.amount_cents || 0);
+      cur.count += 1;
+      categoryTotals.set(cat, cur);
+    }
+    const sorted = [...categoryTotals.entries()].sort((a, b) => b[1].total - a[1].total);
+    const maxTotal = sorted[0]?.[1].total || 1;
+    const totalExpenses = sorted.reduce((sum, [, data]) => sum + data.total, 0) || 1;
+
+    list.replaceChildren();
+    for (const [category, data] of sorted) {
+      const row = document.createElement('div');
+      row.className = 'breakdown-row';
+      const top = document.createElement('div');
+      top.className = 'breakdown-row-top';
+      const name = document.createElement('div');
+      name.className = 'breakdown-cat-name';
+      const icon = categoryIcons[category] ?? '📦';
+      name.innerHTML = `<span>${icon}</span> <span>${category}</span> <span class="breakdown-cat-count">(${data.count} ${data.count === 1 ? 'item' : 'itens'})</span>`;
+      const values = document.createElement('div');
+      values.className = 'breakdown-cat-values';
+      const pct = Math.round((data.total / totalExpenses) * 100);
+      values.innerHTML = `${formatMoney(data.total)} <span class="breakdown-cat-pct">${pct}%</span>`;
+      top.append(name, values);
+
+      const barBg = document.createElement('div');
+      barBg.className = 'breakdown-bar-bg';
+      const barFill = document.createElement('div');
+      barFill.className = 'breakdown-bar-fill';
+      const fillWidth = Math.max(4, Math.round((data.total / maxTotal) * 100));
+      barFill.style.width = `${fillWidth}%`;
+      barBg.append(barFill);
+
+      row.append(top, barBg);
+      list.append(row);
+    }
+  }
+
+  function renderFutureForecast(currentMonthKey) {
+    const container = document.getElementById('forecast-timeline-list');
+    if (!container) return;
+    const baseDate = new Date();
+    baseDate.setDate(1);
+    const months = Array.from({ length: 4 }, (_, i) => {
+      const d = new Date(baseDate.getFullYear(), baseDate.getMonth() + i, 1);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    });
+
+    container.replaceChildren();
+    for (const mKey of months) {
+      const entries = financialEntriesForMonth(mKey);
+      const summary = calculateMonthlyCashFlow(entries, state.cardStatements, state.cardStatementItems, mKey);
+      const monthDate = new Date(`${mKey}-01T12:00:00`);
+      const monthName = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(monthDate);
+      const balance = summary.income - summary.expenses;
+
+      const card = document.createElement('div');
+      card.className = 'forecast-month-card';
+      if (mKey === currentMonthKey) {
+        card.style.borderColor = 'var(--accent)';
+      }
+      card.addEventListener('click', () => {
+        if (window.setControlMonthKey) window.setControlMonthKey(`${mKey}-01`);
+      });
+
+      const info = document.createElement('div');
+      info.className = 'forecast-month-info';
+      const title = document.createElement('div');
+      title.className = 'forecast-month-name';
+      title.textContent = monthName;
+      const meta = document.createElement('div');
+      meta.className = 'forecast-month-meta';
+      const cardNote = summary.cardExpenses > 0 ? ` · Fatura ${formatMoney(summary.cardExpenses)}` : '';
+      const forecastNote = summary.forecastExpenses > 0 ? ` · Parcelas futuras ${formatMoney(summary.forecastExpenses)}` : '';
+      meta.textContent = `Receita ${formatMoney(summary.income)} · Custos ${formatMoney(summary.expenses)}${cardNote}${forecastNote}`;
+      info.append(title, meta);
+
+      const balanceDiv = document.createElement('div');
+      balanceDiv.className = 'forecast-month-balance';
+      const val = document.createElement('strong');
+      val.textContent = formatMoney(balance);
+      const tag = document.createElement('span');
+      tag.className = 'forecast-tag ' + (balance >= 0 ? 'surplus' : 'deficit');
+      tag.textContent = balance >= 0 ? 'Sobra' : 'Falta';
+      balanceDiv.append(val, tag);
+
+      card.append(info, balanceDiv);
+      container.append(card);
+    }
   }
 
   async function addMonthlyControlItem(event) {
@@ -3047,10 +3249,13 @@ if (!config?.url || !config?.publishableKey) {
     return state.cardStatementItems.filter(item => !isCardPayment(item.title)).map(item => {
       const statement = state.cardStatements.find(row => row.id === item.statement_id);
       const card = state.creditCards.find(row => row.id === statement?.credit_card_id);
+      const dueMonth = statement?.due_date ? statement.due_date.slice(0, 7) : item.purchase_date.slice(0, 7);
       return {
         ...item,
         source_item_id: item.id,
         statement_id: statement?.id,
+        statement_due_date: statement?.due_date,
+        due_month: dueMonth,
         created_by: statement?.imported_by ?? null,
         transaction_type: 'expense',
         transaction_date: item.purchase_date,
@@ -3109,7 +3314,7 @@ if (!config?.url || !config?.publishableKey) {
       }));
     const transactions = [...monthlyEntries, ...transactionEntries];
     const cardEntries = allCardStatementEntries().filter(item =>
-      item.transaction_date.startsWith(monthKey));
+      (item.due_month ?? item.transaction_date.slice(0, 7)) === monthKey);
     const statementCardMonths = new Set(state.cardStatements
       .filter(statement => statement.due_date.startsWith(monthKey))
       .map(statement => statement.credit_card_id));
