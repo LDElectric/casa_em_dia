@@ -534,6 +534,32 @@ if (!config?.url || !config?.publishableKey) {
     await handleSession({ user: state.user });
   }
 
+  async function queryMonthlyControlItems(householdId) {
+    const result = await supabase.from('monthly_control_items')
+      .select('id, month_start, item_name, transaction_type, control_group, amount_cents, recurring_item_id, is_skipped, income_behavior')
+      .eq('household_id', householdId)
+      .order('month_start', { ascending: false })
+      .order('control_group')
+      .order('item_name');
+
+    if (result.error && (result.error.code === '42703' || result.error.message?.includes('income_behavior'))) {
+      const fallback = await supabase.from('monthly_control_items')
+        .select('id, month_start, item_name, transaction_type, control_group, amount_cents, recurring_item_id, is_skipped')
+        .eq('household_id', householdId)
+        .order('month_start', { ascending: false })
+        .order('control_group')
+        .order('item_name');
+      if (!fallback.error && fallback.data) {
+        return {
+          data: fallback.data.map(item => ({ ...item, income_behavior: null })),
+          error: null
+        };
+      }
+      return fallback;
+    }
+    return result;
+  }
+
   async function loadHouseholdData() {
     if (!state.membership || !state.user) return false;
     const householdId = state.membership.household_id;
@@ -598,12 +624,7 @@ if (!config?.url || !config?.publishableKey) {
         .select('id, statement_id, source_key, purchase_date, title, cardholder_label, amount_cents, installment_number, installment_total, category, subcategory, budget_group')
         .eq('household_id', householdId)
         .order('purchase_date', { ascending: false }),
-      supabase.from('monthly_control_items')
-        .select('id, month_start, item_name, transaction_type, control_group, amount_cents, recurring_item_id, is_skipped, income_behavior')
-        .eq('household_id', householdId)
-        .order('month_start', { ascending: false })
-        .order('control_group')
-        .order('item_name')
+      queryMonthlyControlItems(householdId)
     ]);
 
     for (const result of [
@@ -673,22 +694,12 @@ if (!config?.url || !config?.publishableKey) {
       target_month_start: state.controlMonthKey
     });
     if (ensureError) {
-      console.error('Could not prepare recurring items for the selected month:', ensureError.message);
-      showToast('Não foi possível gerar os itens recorrentes. Aplique a migração mensal recorrente do Supabase.');
-      return false;
+      console.warn('Could not prepare recurring items for the selected month:', ensureError.message);
     }
-    const { data: monthlyItems, error: monthlyItemsError } = await supabase.from('monthly_control_items')
-      .select('id, month_start, item_name, transaction_type, control_group, amount_cents, recurring_item_id, is_skipped, income_behavior')
-      .eq('household_id', householdId)
-      .order('month_start', { ascending: false })
-      .order('control_group')
-      .order('item_name');
-    if (monthlyItemsError) {
-      console.error('Could not reload recurring monthly items:', monthlyItemsError.message);
-      showToast('Não foi possível atualizar os itens mensais.');
-      return false;
+    const { data: monthlyItems, error: monthlyItemsError } = await queryMonthlyControlItems(householdId);
+    if (!monthlyItemsError && monthlyItems) {
+      state.monthlyControlItems = monthlyItems;
     }
-    state.monthlyControlItems = monthlyItems;
     document.getElementById('control-household-subtitle').textContent =
       `${householdResult.data.name} · ${state.user.email ?? ''}`;
     document.getElementById('settings-household-name').textContent = householdResult.data.name;
@@ -2827,7 +2838,7 @@ if (!config?.url || !config?.publishableKey) {
       await loadHouseholdData();
       return;
     }
-    const { error } = await supabase.from('monthly_control_items').insert({
+    const payload = {
       household_id: state.membership.household_id,
       month_start: state.controlMonthKey,
       item_name: itemName,
@@ -2836,7 +2847,13 @@ if (!config?.url || !config?.publishableKey) {
       amount_cents: amountCents,
       income_behavior: incomeBehavior,
       created_by: state.user.id
-    });
+    };
+    let { error } = await supabase.from('monthly_control_items').insert(payload);
+    if (error && (error.code === '42703' || error.message?.includes('income_behavior'))) {
+      const fallbackPayload = { ...payload };
+      delete fallbackPayload.income_behavior;
+      ({ error } = await supabase.from('monthly_control_items').insert(fallbackPayload));
+    }
     if (error) {
       console.error('Could not add monthly control item:', error.message);
       setMessage('monthly-control-message', 'Não foi possível adicionar o item. Confira se o nome já existe.');
@@ -2963,7 +2980,11 @@ if (!config?.url || !config?.publishableKey) {
         : 'Não há itens anteriores. Adicione suas receitas e despesas acima.');
       return;
     }
-    const { error } = await supabase.from('monthly_control_items').insert(rows);
+    let { error } = await supabase.from('monthly_control_items').insert(rows);
+    if (error && (error.code === '42703' || error.message?.includes('income_behavior'))) {
+      const fallbackRows = rows.map(({ income_behavior, ...rest }) => rest);
+      ({ error } = await supabase.from('monthly_control_items').insert(fallbackRows));
+    }
     if (error) {
       console.error('Could not copy monthly control items:', error.message);
       showToast('Não foi possível copiar os itens do mês anterior.');
