@@ -12,7 +12,8 @@ import {
   budgetGroupForControlGroup,
   classifyExpenseGroup,
   controlGroupForBudgetGroup,
-  expenseGroupLabel
+  expenseGroupLabel,
+  normalizeText
 } from './smart-classify.mjs';
 import { backupFileName, buildBackup, centsToCsv, toCsv } from './backup.mjs';
 
@@ -2848,6 +2849,22 @@ if (!config?.url || !config?.publishableKey) {
     return targetMonth;
   }
 
+  async function findDuplicateTransaction({ title, amountCents, transactionDate, transactionType }) {
+    const normalized = normalizeText(title);
+    if (!normalized) return null;
+    const { data, error } = await supabase.from('transactions')
+      .select('id, title, transaction_type, amount_cents, transaction_date')
+      .eq('household_id', state.membership.household_id)
+      .eq('transaction_type', transactionType)
+      .eq('transaction_date', transactionDate)
+      .eq('amount_cents', amountCents);
+    if (error) {
+      console.warn('Could not check duplicate transactions:', error.message);
+      return null;
+    }
+    return (data ?? []).find(row => normalizeText(row.title) === normalized) ?? null;
+  }
+
   async function saveEntry() {
     const rawAmount = document.getElementById('transaction-amount').value.trim();
     const amount = rawAmount ? parseAmount(rawAmount) : null;
@@ -2903,12 +2920,31 @@ if (!config?.url || !config?.publishableKey) {
       return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
     })();
     const targetMonthStart = state.controlMonthKey ?? currentMonthStart;
+    const transactionDate = targetMonthStart === currentMonthStart
+      ? localDate(new Date())
+      : targetMonthStart;
     if (selectedFrequency === 'once') {
+      const duplicate = amount == null
+        ? null
+        : await findDuplicateTransaction({ title, amountCents: amount, transactionDate, transactionType });
+      if (duplicate) {
+        const [day, month, year] = transactionDate.split('-').reverse().map(Number);
+        const prettyDate = new Intl.DateTimeFormat('pt-BR').format(new Date(year, month - 1, day));
+        const confirmed = window.confirm(
+          `Já existe ${transactionType === 'income' ? 'uma receita' : 'uma despesa'} igual: `
+          + `"${duplicate.title}" de ${formatMoney(Number(duplicate.amount_cents))} em ${prettyDate}.`
+          + '\n\nLançar de novo?'
+        );
+        if (!confirmed) {
+          document.getElementById('save-transaction').disabled = false;
+          document.getElementById('save-message').textContent = 'Lançamento repetido não foi salvo.';
+          showToast('Nada foi duplicado.');
+          return;
+        }
+      }
       result = await supabase.from('transactions').insert({
           ...payload,
-          transaction_date: targetMonthStart === currentMonthStart
-            ? localDate(new Date())
-            : targetMonthStart
+          transaction_date: transactionDate
         });
     } else {
       const matchingTemplate = state.recurringItems.find(template =>

@@ -39,6 +39,13 @@ Em **Ajustes → Backup e uso local** é possível baixar:
 
 Os CSV usam `;` como separador, vírgula decimal e BOM UTF-8 para abrir direto no Excel em português. Os arquivos são gerados no navegador a partir dos dados do Supabase; nada é enviado a terceiros.
 
+## Duplicidade de lançamentos
+
+O app evita duplicar de duas formas:
+
+- **Itens do mês** (receitas e despesas do controle mensal) e **modelos fixos** não podem repetir o mesmo nome no mesmo grupo e mês; ao cadastrar um nome que já existe, o item é restaurado em vez de duplicado, e um índice único no banco reforça a regra. Faturas de cartão usam `source_key` e a importação da planilha usa o fingerprint do arquivo, então reimportar o mesmo arquivo não cria cópias.
+- **Lançamentos avulsos** (ficha de despesa/receita com frequência **Avulsa**): antes de gravar, o app procura no extrato um lançamento com **mesmo nome, mesmo valor e mesma data** e pede confirmação, mostrando item, valor e data. Confirmando, o lançamento é gravado; recusando, nada é salvo. A comparação ignora maiúsculas/minúsculas e acentos, e valores ou nomes diferentes não disparam o aviso.
+
 ## Alternativa: GitHub Pages
 
 O workflow `.github/workflows/deploy-github-pages.yml` pode ser executado manualmente após habilitar o Pages. No GitHub, abra **Settings → Pages** e escolha **GitHub Actions** como origem da publicação; depois, em **Actions**, execute **Deploy PWA to GitHub Pages**. A URL será `https://ldelectric.github.io/casa_em_dia/`.
