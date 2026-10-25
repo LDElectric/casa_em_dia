@@ -157,6 +157,11 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('restore-removed-items').addEventListener('click', restoreRemovedItems);
     window.addEventListener('control-month-changed', async event => {
       state.controlMonthKey = event.detail.monthKey;
+      try {
+        window.localStorage.setItem('casa-em-dia-control-month', event.detail.monthKey);
+      } catch {
+        /* navegador sem armazenamento local */
+      }
       const loaded = await loadHouseholdData();
       if (!loaded) showToast('Não foi possível preparar os valores recorrentes deste mês.');
     });
@@ -177,7 +182,17 @@ if (!config?.url || !config?.publishableKey) {
     });
     updateCardScopeFields();
     const today = new Date();
-    state.controlMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+    const currentMonthStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+    let savedMonthStart = null;
+    try {
+      savedMonthStart = window.localStorage.getItem('casa-em-dia-control-month');
+    } catch {
+      /* navegador sem armazenamento local */
+    }
+    state.controlMonthKey = /^\d{4}-(0[1-9]|1[0-2])-01$/.test(savedMonthStart ?? '')
+      ? savedMonthStart
+      : currentMonthStart;
+    if (window.syncControlMonth) window.syncControlMonth(state.controlMonthKey);
     state.transactionsMonthKey = state.controlMonthKey;
     window.addEventListener('transactions-month-changed', event => {
       state.transactionsMonthKey = event.detail.monthKey;
@@ -519,9 +534,21 @@ if (!config?.url || !config?.publishableKey) {
       authScreen.hidden = true;
       setupScreen.hidden = true;
       appShell.inert = false;
+      restoreLastScreen();
     } else {
       showAuthStatus('Não foi possível carregar os dados da casa. Sua sessão continua protegida; tente novamente.', true);
     }
+  }
+
+  function restoreLastScreen() {
+    let savedScreen = null;
+    try {
+      savedScreen = window.localStorage.getItem('casa-em-dia-last-screen');
+    } catch {
+      /* navegador sem armazenamento local */
+    }
+    if (!savedScreen || !document.getElementById(`screen-${savedScreen}`)) return;
+    if (typeof window.showScreen === 'function') window.showScreen(savedScreen);
   }
 
   async function createHousehold(event) {
@@ -586,7 +613,8 @@ if (!config?.url || !config?.publishableKey) {
       cardsResult,
       statementsResult,
       statementItemsResult,
-      monthlyControlResult
+      monthlyControlResult,
+      ensureResult
     ] = await Promise.all([
       supabase.from('household_members')
         .select('user_id, email, role')
@@ -632,7 +660,10 @@ if (!config?.url || !config?.publishableKey) {
         .select('id, statement_id, source_key, purchase_date, title, cardholder_label, amount_cents, installment_number, installment_total, category, subcategory, budget_group')
         .eq('household_id', householdId)
         .order('purchase_date', { ascending: false }),
-      queryMonthlyControlItems(householdId)
+      queryMonthlyControlItems(householdId),
+      supabase.rpc('ensure_monthly_control_items', {
+        target_month_start: state.controlMonthKey
+      })
     ]);
 
     for (const result of [
@@ -698,15 +729,13 @@ if (!config?.url || !config?.publishableKey) {
     state.cardStatements = statementsResult.data;
     state.cardStatementItems = statementItemsResult.data;
     state.monthlyControlItems = monthlyControlResult.data;
-    const { error: ensureError } = await supabase.rpc('ensure_monthly_control_items', {
-      target_month_start: state.controlMonthKey
-    });
-    if (ensureError) {
-      console.warn('Could not prepare recurring items for the selected month:', ensureError.message);
-    }
-    const { data: monthlyItems, error: monthlyItemsError } = await queryMonthlyControlItems(householdId);
-    if (!monthlyItemsError && monthlyItems) {
-      state.monthlyControlItems = monthlyItems;
+    if (ensureResult.error) {
+      console.warn('Could not prepare recurring items for the selected month:', ensureResult.error.message);
+    } else if (Number(ensureResult.data ?? 0) > 0) {
+      const { data: monthlyItems, error: monthlyItemsError } = await queryMonthlyControlItems(householdId);
+      if (!monthlyItemsError && monthlyItems) {
+        state.monthlyControlItems = monthlyItems;
+      }
     }
     document.getElementById('control-household-subtitle').textContent =
       `${householdResult.data.name} · ${state.user.email ?? ''}`;

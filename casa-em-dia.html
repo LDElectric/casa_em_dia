@@ -404,10 +404,15 @@
       background: var(--bg-elevated); border-radius: 20px 20px 0 0;
       padding: 12px 20px calc(24px + env(safe-area-inset-bottom, 0px));
       z-index: 210; transform: translateY(100%);
-      transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+      visibility: hidden; pointer-events: none;
+      transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1), visibility 0s linear 0.35s;
       max-height: 92%; overflow-y: auto;
     }
-    .sheet.open { transform: translateY(0); }
+    .sheet.open {
+      transform: translateY(0);
+      visibility: visible; pointer-events: auto;
+      transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1), visibility 0s;
+    }
     .sheet-handle { width: 36px; height: 5px; background: var(--bg-tertiary); border-radius: 3px; margin: 0 auto 16px; }
     .sheet-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
     .sheet-title { font-size: 20px; font-weight: 700; text-align: center; flex: 1; }
@@ -617,16 +622,21 @@
         right: auto;
         transform: translate(-50%, -40%) scale(0.95);
         opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
         width: 440px;
         max-height: 85vh;
         border-radius: 20px;
         padding: 24px;
         box-shadow: 0 24px 48px rgba(0,0,0,0.2);
-        transition: transform 0.25s ease, opacity 0.25s ease;
+        transition: transform 0.25s ease, opacity 0.25s ease, visibility 0s linear 0.25s;
       }
       .sheet.open {
         transform: translate(-50%, -50%) scale(1);
         opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        transition: transform 0.25s ease, opacity 0.25s ease, visibility 0s;
       }
       .sheet-handle { display: none; }
     }
@@ -942,8 +952,8 @@
 <body>
   <div class="auth-screen" id="auth-screen">
     <section class="auth-card" id="auth-status-card" role="status" aria-live="polite">
-      <h1 id="auth-status-title">Reconectando</h1>
-      <p id="auth-status-message">Verificando sua sessão segura...</p>
+      <h1 id="auth-status-title">Abrindo Casa em Dia</h1>
+      <p id="auth-status-message">Carregando os dados da sua casa...</p>
       <button class="primary-btn" id="auth-retry" type="button" hidden>Tentar novamente</button>
     </section>
     <section class="auth-card" id="auth-login-card" role="dialog" aria-modal="true" aria-labelledby="auth-title" hidden>
@@ -1473,6 +1483,11 @@
       document.getElementById('screen-' + id).classList.add('active');
       document.querySelectorAll('.tab-item').forEach(t => t.classList.toggle('active', t.dataset.screen === id));
       document.querySelectorAll('.desktop-nav button').forEach(t => t.classList.toggle('active', t.dataset.screen === id));
+      try {
+        window.localStorage.setItem('casa-em-dia-last-screen', id);
+      } catch {
+        /* navegador sem armazenamento local */
+      }
       if (id === 'insights') setTimeout(initCharts, 80);
     }
     let controlMonthDate = new Date();
@@ -1491,6 +1506,12 @@
     }
     window.changeControlMonth = changeControlMonth;
     window.setControlMonthKey = setControlMonthKey;
+    window.syncControlMonth = monthKey => {
+      const parts = String(monthKey ?? '').slice(0, 7).split('-').map(Number);
+      if (parts.length === 2 && !Number.isNaN(parts[0]) && !Number.isNaN(parts[1])) {
+        controlMonthDate = new Date(parts[0], parts[1] - 1, 1);
+      }
+    };
     let transactionMonthDate = new Date();
     function changeTransactionMonth(delta) {
       transactionMonthDate = new Date(transactionMonthDate.getFullYear(), transactionMonthDate.getMonth() + delta, 1);
