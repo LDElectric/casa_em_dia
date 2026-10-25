@@ -8,6 +8,13 @@ import {
   parseCardPdfLines,
   parseCardPdfTotal
 } from './card-statement.mjs';
+import {
+  budgetGroupForControlGroup,
+  classifyExpenseGroup,
+  controlGroupForBudgetGroup,
+  expenseGroupLabel
+} from './smart-classify.mjs';
+import { backupFileName, buildBackup, centsToCsv, toCsv } from './backup.mjs';
 
 const config = window.SUPABASE_CONFIG;
 const authScreen = document.getElementById('auth-screen');
@@ -121,9 +128,14 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('save-transaction').addEventListener('click', saveEntry);
     document.getElementById('entry-category').addEventListener('change', renderSubcategoryOptions);
     document.getElementById('entry-subcategory').addEventListener('change', setDefaultBudgetGroup);
+    document.getElementById('transaction-title').addEventListener('change', suggestEntryBudgetGroup);
+    document.getElementById('entry-budget-group').addEventListener('change', () => {
+      entryBudgetGroupTouched = true;
+    });
     document.getElementById('payment-method').addEventListener('change', updatePaymentFields);
     document.getElementById('entry-variable-amount').addEventListener('change', updateEntryAmountLabel);
     window.addEventListener('entry-type-changed', () => {
+      entryBudgetGroupTouched = false;
       renderEntryCategoryOptions();
       updatePaymentFields();
     });
@@ -147,10 +159,27 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('confirm-card-import').addEventListener('click', confirmCardImport);
     document.getElementById('close-card-import').addEventListener('click', () =>
       document.getElementById('card-import-dialog').close());
-    document.querySelectorAll('.control-quick-add').forEach(form => {
+    document.querySelectorAll('form[data-control-group]').forEach(form => {
       form.addEventListener('submit', addMonthlyControlItem);
-      form.elements.repeat_monthly.addEventListener('change', () => {
-        if (!form.elements.repeat_monthly.checked) form.elements.variable_amount.checked = false;
+      const variableOption = form.elements.variable_amount?.closest('label');
+      const syncVariableOption = () => {
+        const repeating = form.elements.repeat_monthly.checked;
+        if (!repeating) form.elements.variable_amount.checked = false;
+        if (variableOption) variableOption.hidden = !repeating;
+      };
+      form.elements.repeat_monthly.addEventListener('change', syncVariableOption);
+      form.addEventListener('reset', () => window.setTimeout(syncVariableOption, 0));
+      syncVariableOption();
+    });
+    document.querySelectorAll('#quick-add-type .type-btn').forEach(button => {
+      button.addEventListener('click', () => {
+        quickAddType = button.dataset.type === 'income' ? 'income' : 'expense';
+        document.querySelectorAll('#quick-add-type .type-btn')
+          .forEach(other => other.classList.toggle('active', other === button));
+        document.getElementById('quick-add-hint').textContent = quickAddType === 'income'
+          ? 'A receita entra em Receitas deste mês; marque "Fixar e repetir" para os próximos meses.'
+          : 'Despesas entram automaticamente em Gastos fixos, variáveis ou adicionais.';
+        document.getElementById('monthly-control-message').textContent = '';
       });
     });
     document.getElementById('copy-control-items').addEventListener('click', copyPreviousMonthItems);
@@ -171,6 +200,15 @@ if (!config?.url || !config?.publishableKey) {
         updateControlItemDialogNote();
       });
     });
+    document.querySelectorAll('#control-item-group .freq-btn').forEach(button => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('#control-item-group .freq-btn')
+          .forEach(other => other.classList.toggle('active', other === button));
+      });
+    });
+    document.getElementById('export-backup-json').addEventListener('click', exportHouseholdBackup);
+    document.getElementById('export-monthly-csv').addEventListener('click', exportMonthlyItemsCsv);
+    document.getElementById('export-transactions-csv').addEventListener('click', exportTransactionsCsv);
     window.addEventListener('control-month-changed', async event => {
       state.controlMonthKey = event.detail.monthKey;
       try {
@@ -852,26 +890,61 @@ if (!config?.url || !config?.publishableKey) {
   }
 
   function monthlyControlGroupForCardItem(budgetGroup) {
-    if (budgetGroup === 'fixed') return 'fixed';
-    if (budgetGroup === 'emergency') return 'additional';
-    return 'variable';
+    return controlGroupForBudgetGroup(budgetGroup);
   }
 
   function normalizeControlName(value) {
     return String(value ?? '').trim().toLocaleLowerCase('pt-BR');
   }
 
-  function budgetGroupForControlGroup(controlGroup) {
-    if (controlGroup === 'fixed') return 'fixed';
-    if (controlGroup === 'additional') return 'emergency';
-    if (controlGroup === 'variable') return 'variable';
-    return null;
-  }
-
   function controlGroupForTemplate(template) {
     return template.transaction_type === 'income'
       ? 'income'
       : monthlyControlGroupForCardItem(template.budget_group);
+  }
+
+  const CLASSIFICATION_REASONS = {
+    category: 'categoria',
+    history: 'histórico',
+    keywords: 'palavras-chave',
+    default: 'padrão'
+  };
+
+  let quickAddType = 'expense';
+
+  function controlClassificationHistory() {
+    const history = [];
+    for (const item of state.monthlyControlItems) {
+      if (item.is_skipped || item.transaction_type !== 'expense') continue;
+      history.push({ name: item.item_name, group: item.control_group, monthStart: item.month_start });
+    }
+    for (const template of state.recurringItems) {
+      if (template.transaction_type !== 'expense') continue;
+      history.push({
+        name: template.title,
+        group: controlGroupForTemplate(template),
+        monthStart: template.starts_month
+      });
+    }
+    for (const transaction of state.transactions) {
+      if (transaction.transaction_type !== 'expense' || !transaction.budget_group) continue;
+      history.push({
+        name: transaction.title,
+        group: monthlyControlGroupForCardItem(transaction.budget_group),
+        monthStart: transaction.transaction_date
+      });
+    }
+    return history;
+  }
+
+  function classifyExpense(itemName, { category, subcategory } = {}) {
+    return classifyExpenseGroup({
+      itemName,
+      category,
+      subcategory,
+      categories: state.financeCategories.filter(item => item.transaction_type === 'expense'),
+      history: controlClassificationHistory()
+    });
   }
 
   function findRecurringTemplate(transactionType, controlGroup, itemName) {
@@ -1006,6 +1079,7 @@ if (!config?.url || !config?.publishableKey) {
       income_behavior: incomeBehavior,
       updated_at: new Date().toISOString()
     };
+    if (controlGroup) rowPayload.control_group = controlGroup;
     if (existingRow) {
       const error = await applyMonthlyControlUpdate(rowPayload, query => query
         .eq('id', existingRow.id)
@@ -1117,6 +1191,17 @@ if (!config?.url || !config?.publishableKey) {
     document.querySelectorAll('#control-item-behavior .freq-btn').forEach(button => {
       button.classList.toggle('active', button.dataset.behavior === behavior);
     });
+    const groupWrap = document.getElementById('control-item-group-wrap');
+    const isExpense = item.transaction_type === 'expense';
+    if (groupWrap) groupWrap.hidden = !isExpense;
+    if (isExpense) {
+      const currentGroup = ['fixed', 'variable', 'additional'].includes(item.control_group)
+        ? item.control_group
+        : 'variable';
+      document.querySelectorAll('#control-item-group .freq-btn').forEach(button => {
+        button.classList.toggle('active', button.dataset.group === currentGroup);
+      });
+    }
     const deleteButton = document.getElementById('control-item-delete');
     deleteButton.textContent = item.recurring_item_id ? 'Excluir deste mês' : 'Excluir';
     deleteButton.disabled = false;
@@ -1155,6 +1240,12 @@ if (!config?.url || !config?.publishableKey) {
     const rawAmount = document.getElementById('control-item-amount-input').value.trim();
     const amountCents = rawAmount ? parseAmount(rawAmount) : null;
     const behavior = document.querySelector('#control-item-behavior .freq-btn.active')?.dataset.behavior ?? 'once';
+    const selectedGroup = item.transaction_type === 'expense'
+      ? document.querySelector('#control-item-group .freq-btn.active')?.dataset.group
+      : null;
+    const targetGroup = item.transaction_type === 'expense' && selectedGroup
+      ? selectedGroup
+      : item.control_group;
     if (!name || name.length > 120
       || (rawAmount && (!Number.isSafeInteger(amountCents) || amountCents < 0))
       || (behavior === 'fixed' && (!Number.isSafeInteger(amountCents) || amountCents <= 0))) {
@@ -1166,10 +1257,10 @@ if (!config?.url || !config?.publishableKey) {
     const duplicate = state.monthlyControlItems.some(row =>
       row.id !== item.id
       && row.month_start === item.month_start
-      && row.control_group === item.control_group
+      && row.control_group === targetGroup
       && normalizeControlName(row.item_name) === normalizeControlName(name));
     if (duplicate) {
-      setMessage('control-item-dialog-message', 'Já existe outro item com esse nome neste grupo do mês.');
+      setMessage('control-item-dialog-message', `Já existe outro item com esse nome em ${expenseGroupLabel(targetGroup)} neste mês.`);
       return;
     }
     const saveButton = document.getElementById('control-item-save');
@@ -1178,7 +1269,8 @@ if (!config?.url || !config?.publishableKey) {
     try {
       const householdId = state.membership.household_id;
       const transactionType = item.transaction_type;
-      const controlGroup = item.control_group;
+      const controlGroup = targetGroup;
+      const groupNote = transactionType === 'expense' ? ` em ${expenseGroupLabel(controlGroup)}` : '';
       const recurring = state.recurringItems.find(template => template.id === item.recurring_item_id);
 
       if (behavior === 'once') {
@@ -1190,6 +1282,7 @@ if (!config?.url || !config?.publishableKey) {
           {
             item_name: name,
             amount_cents: amountCents,
+            control_group: controlGroup,
             is_skipped: false,
             recurring_item_id: null,
             income_behavior: null,
@@ -1198,7 +1291,7 @@ if (!config?.url || !config?.publishableKey) {
           query => query.eq('id', item.id).eq('household_id', householdId)
         );
         if (error) throw error;
-        showToast('Item ajustado; a repetição foi encerrada a partir deste mês.');
+        showToast(`Item ajustado${groupNote}; a repetição foi encerrada a partir deste mês.`);
       } else {
         const { id: templateId, error: templateError } = await saveRecurringTemplate({
           template: recurring ?? findRecurringTemplate(transactionType, controlGroup, name),
@@ -1228,6 +1321,7 @@ if (!config?.url || !config?.publishableKey) {
         const { error: futureError } = await supabase.from('monthly_control_items')
           .update({
             item_name: name,
+            control_group: controlGroup,
             ...(behavior === 'fixed' ? { amount_cents: amountCents } : {}),
             updated_at: new Date().toISOString()
           })
@@ -1238,8 +1332,8 @@ if (!config?.url || !config?.publishableKey) {
           console.warn('Could not apply the change to future months:', futureError.message);
         }
         showToast(behavior === 'fixed'
-          ? 'Item fixo salvo para este mês e os próximos.'
-          : 'Item variável salvo; ajuste o valor a cada mês.');
+          ? `Item fixo salvo${groupNote} para este mês e os próximos.`
+          : `Item variável salvo${groupNote}; ajuste o valor a cada mês.`);
       }
       closeControlItemDialog();
       await loadHouseholdData();
@@ -1381,6 +1475,31 @@ if (!config?.url || !config?.publishableKey) {
       && item.category === category
       && item.subcategory === subcategory);
     if (option?.budget_group) document.getElementById('entry-budget-group').value = option.budget_group;
+  }
+
+  let entryBudgetGroupTouched = false;
+
+  function suggestEntryBudgetGroup() {
+    if (entryBudgetGroupTouched) return;
+    const isExpense = document.getElementById('btn-expense').classList.contains('active');
+    if (!isExpense) return;
+    if (document.getElementById('entry-category').value) return;
+    const title = document.getElementById('transaction-title').value.trim();
+    if (!title) return;
+    const classification = classifyExpense(title);
+    const budgetGroup = budgetGroupForControlGroup(classification.group);
+    if (budgetGroup) document.getElementById('entry-budget-group').value = budgetGroup;
+    const normalized = normalizeControlName(title);
+    const suggestion = state.financeCategories.find(item =>
+      item.transaction_type === 'expense'
+      && item.budget_group === budgetGroup
+      && [item.category, item.subcategory]
+        .some(value => normalizeControlName(value) === normalized));
+    if (!suggestion) return;
+    document.getElementById('entry-category').value = suggestion.category;
+    renderSubcategoryOptions();
+    document.getElementById('entry-subcategory').value = suggestion.subcategory;
+    setDefaultBudgetGroup();
   }
 
   function updatePaymentFields() {
@@ -3613,19 +3732,28 @@ if (!config?.url || !config?.publishableKey) {
     const form = event.currentTarget;
     const submitButton = form.querySelector('button[type="submit"]');
     const itemName = form.elements.item_name.value.trim();
-    const controlGroup = form.dataset.controlGroup;
+    const groupInput = form.dataset.controlGroup;
+    const autoClassify = groupInput === 'auto';
     const rawAmount = form.elements.amount.value.trim();
     const amountCents = rawAmount ? parseAmount(rawAmount) : null;
     const repeatMonthly = form.elements.repeat_monthly.checked;
     const variableAmount = repeatMonthly && Boolean(form.elements.variable_amount?.checked);
     if (!itemName || itemName.length > 120
-      || !['income', 'fixed', 'variable', 'additional'].includes(controlGroup)
+      || (!autoClassify && !['income', 'fixed', 'variable', 'additional'].includes(groupInput))
       || (rawAmount && (!Number.isSafeInteger(amountCents) || amountCents < 0))
       || (repeatMonthly && !variableAmount && (!Number.isSafeInteger(amountCents) || amountCents <= 0))) {
       reportControlMessage('Informe o nome e um valor válido (ou deixe o valor em branco).');
       return;
     }
-    const transactionType = controlGroup === 'income' ? 'income' : 'expense';
+    const transactionType = autoClassify
+      ? quickAddType
+      : groupInput === 'income' ? 'income' : 'expense';
+    const classification = autoClassify && transactionType === 'expense' ? classifyExpense(itemName) : null;
+    const controlGroup = autoClassify
+      ? (transactionType === 'income' ? 'income' : classification.group)
+      : groupInput;
+    const groupLabel = transactionType === 'income' ? 'Receitas' : expenseGroupLabel(controlGroup);
+    const reasonLabel = CLASSIFICATION_REASONS[classification?.reason] ?? '';
     if (submitButton) submitButton.disabled = true;
     setMessage('monthly-control-message', '');
     try {
@@ -3639,7 +3767,7 @@ if (!config?.url || !config?.publishableKey) {
       const existingRow = (monthRows ?? []).find(row => normalizeControlName(row.item_name) === normalized);
 
       if (existingRow && !existingRow.is_skipped) {
-        reportControlMessage('Esse item já existe neste grupo do mês. Edite o valor na lista abaixo.');
+        reportControlMessage(`Esse item já existe em ${groupLabel} neste mês. Edite o valor na lista abaixo.`);
         return;
       }
 
@@ -3671,10 +3799,12 @@ if (!config?.url || !config?.publishableKey) {
         });
         if (rowError) throw rowError;
         form.reset();
-        setMessage('monthly-control-message', 'Item fixo salvo; ele aparecerá automaticamente nos próximos meses.');
+        setMessage('monthly-control-message', existingRow
+          ? `Item restaurado em ${groupLabel}${reasonLabel ? ` (${reasonLabel})` : ''} e fixado para os próximos meses.`
+          : `Item fixo salvo em ${groupLabel}${reasonLabel ? ` (${reasonLabel})` : ''}; ele aparecerá automaticamente nos próximos meses.`);
         showToast(existingRow
-          ? 'Item restaurado e fixado para os próximos meses.'
-          : 'Item fixo salvo; ele aparecerá nos próximos meses.');
+          ? `Item restaurado em ${groupLabel} e fixado para os próximos meses.`
+          : `Item fixo salvo em ${groupLabel}; ele aparecerá nos próximos meses.`);
         await loadHouseholdData();
         return;
       }
@@ -3708,8 +3838,12 @@ if (!config?.url || !config?.publishableKey) {
       }
       if (error) throw error;
       form.reset();
-      setMessage('monthly-control-message', '');
-      showToast(existingRow ? 'Item restaurado neste mês.' : 'Item adicionado ao mês.');
+      setMessage('monthly-control-message', existingRow
+        ? `Item restaurado em ${groupLabel}${reasonLabel ? ` (${reasonLabel})` : ''}.`
+        : `Item adicionado em ${groupLabel}${reasonLabel ? ` (${reasonLabel})` : ''}.`);
+      showToast(existingRow
+        ? `Item restaurado em ${groupLabel}.`
+        : `Item adicionado em ${groupLabel}.`);
       await refreshControlState();
     } catch (error) {
       console.error('Could not add monthly control item:', error?.message ?? error);
@@ -3727,6 +3861,155 @@ if (!config?.url || !config?.publishableKey) {
   function reportControlMessage(message) {
     setMessage('monthly-control-message', message);
     if (message) showToast(message);
+  }
+
+  const PAYMENT_METHOD_LABELS = {
+    cash: 'Dinheiro',
+    debit: 'Débito',
+    credit: 'Cartão de crédito',
+    transfer: 'Transferência/Pix',
+    other: 'Outro'
+  };
+
+  function downloadFile(filename, content, mime) {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.rel = 'noopener';
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  async function fetchAllHouseholdTransactions() {
+    const { data, error } = await supabase.from('transactions')
+      .select('id, created_by, title, transaction_type, category, subcategory, budget_group, payment_method, credit_card_id, amount_cents, transaction_date, created_at')
+      .eq('household_id', state.membership.household_id)
+      .order('transaction_date', { ascending: false });
+    if (error) throw error;
+    return data ?? [];
+  }
+
+  async function exportHouseholdBackup() {
+    const householdId = state.membership?.household_id;
+    if (!householdId) return;
+    const button = document.getElementById('export-backup-json');
+    button.disabled = true;
+    setMessage('backup-message', 'Preparando o backup...');
+    try {
+      const transactions = await fetchAllHouseholdTransactions();
+      const backup = buildBackup({
+        exportedAt: new Date().toISOString(),
+        household: {
+          id: householdId,
+          name: document.getElementById('settings-household-name').textContent.trim() || null
+        },
+        members: state.members.map(member => ({
+          user_id: member.user_id,
+          email: member.email,
+          role: member.role
+        })),
+        financeCategories: state.financeCategories,
+        budgetTargets: state.budgetTargets,
+        reserveMovements: state.reserveMovements,
+        creditCards: state.creditCards,
+        cardStatements: state.cardStatements,
+        cardStatementItems: state.cardStatementItems,
+        recurringItems: state.recurringItems,
+        monthlyControlItems: state.monthlyControlItems,
+        transactions
+      });
+      downloadFile(
+        `${backupFileName('casa-em-dia-backup')}.json`,
+        JSON.stringify(backup, null, 2),
+        'application/json'
+      );
+      setMessage('backup-message',
+        `Backup gerado com ${transactions.length} lançamentos do extrato e ${state.monthlyControlItems.length} itens mensais.`);
+      showToast('Backup completo baixado.');
+    } catch (error) {
+      console.error('Could not build the household backup:', error?.message ?? error);
+      setMessage('backup-message', 'Não foi possível gerar o backup. Tente novamente.');
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function controlBehaviorCsvLabel(row) {
+    const template = state.recurringItems.find(item => item.id === row.recurring_item_id);
+    if (!template) return 'Sem repetição';
+    if (!template.active) return 'Repetição encerrada';
+    const behavior = row.transaction_type === 'income'
+      ? row.income_behavior ?? template.amount_behavior
+      : template.amount_behavior;
+    return behavior === 'fixed' ? 'Fixa' : 'Variável';
+  }
+
+  function exportMonthlyItemsCsv() {
+    const rows = [...state.monthlyControlItems].sort((left, right) =>
+      left.month_start.localeCompare(right.month_start)
+      || left.control_group.localeCompare(right.control_group)
+      || left.item_name.localeCompare(right.item_name, 'pt-BR'));
+    if (!rows.length) {
+      setMessage('backup-message', 'Nenhum lançamento mensal para exportar.');
+      return;
+    }
+    const columns = [
+      { label: 'Mês', value: row => row.month_start.slice(0, 7) },
+      { label: 'Tipo', value: row => row.transaction_type === 'income' ? 'Receita' : 'Despesa' },
+      {
+        label: 'Grupo',
+        value: row => row.transaction_type === 'income' ? 'Receitas' : expenseGroupLabel(row.control_group)
+      },
+      { label: 'Item', value: row => row.item_name },
+      { label: 'Valor (R$)', value: row => centsToCsv(row.amount_cents) },
+      { label: 'Repetição', value: controlBehaviorCsvLabel },
+      { label: 'Removido do mês', value: row => row.is_skipped ? 'Sim' : 'Não' }
+    ];
+    downloadFile(
+      `${backupFileName('casa-em-dia-lancamentos')}.csv`,
+      toCsv(columns, rows),
+      'text/csv;charset=utf-8'
+    );
+    setMessage('backup-message', `${rows.length} lançamentos mensais exportados.`);
+    showToast('CSV dos lançamentos mensais baixado.');
+  }
+
+  async function exportTransactionsCsv() {
+    const button = document.getElementById('export-transactions-csv');
+    button.disabled = true;
+    setMessage('backup-message', 'Preparando o extrato...');
+    try {
+      const transactions = await fetchAllHouseholdTransactions();
+      if (!transactions.length) {
+        setMessage('backup-message', 'Nenhum lançamento de extrato para exportar.');
+        return;
+      }
+      const columns = [
+        { label: 'Data', value: row => row.transaction_date },
+        { label: 'Descrição', value: row => row.title },
+        { label: 'Tipo', value: row => row.transaction_type === 'income' ? 'Receita' : 'Despesa' },
+        { label: 'Categoria', value: row => row.category },
+        { label: 'Subcategoria', value: row => row.subcategory },
+        { label: 'Forma de pagamento', value: row => PAYMENT_METHOD_LABELS[row.payment_method] ?? row.payment_method },
+        { label: 'Valor (R$)', value: row => centsToCsv(row.amount_cents) }
+      ];
+      downloadFile(
+        `${backupFileName('casa-em-dia-extrato')}.csv`,
+        toCsv(columns, transactions),
+        'text/csv;charset=utf-8'
+      );
+      setMessage('backup-message', `${transactions.length} lançamentos do extrato exportados.`);
+      showToast('CSV do extrato baixado.');
+    } catch (error) {
+      console.error('Could not export the transaction list:', error?.message ?? error);
+      setMessage('backup-message', 'Não foi possível exportar o extrato. Tente novamente.');
+    } finally {
+      button.disabled = false;
+    }
   }
 
   async function copyPreviousMonthItems() {

@@ -8,6 +8,8 @@ const publishFiles = [
   'casa-em-dia.html',
   'app.js',
   'card-statement.mjs',
+  'smart-classify.mjs',
+  'backup.mjs',
   'supabase-config.js',
   'manifest.webmanifest',
   'icon.svg',

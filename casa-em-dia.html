@@ -232,14 +232,6 @@
       display: block; margin-top: 3px; color: var(--text-tertiary);
       font-size: 11px; line-height: 1.35;
     }
-    .control-quick-add {
-      display: grid; grid-template-columns: minmax(0, 1fr) minmax(96px, 132px) 88px;
-      gap: 8px; align-items: center; padding: 12px 10px 12px 14px;
-      border-top: 1px solid var(--separator);
-    }
-    .control-quick-add .form-input { min-width: 0; margin: 0; padding: 10px; font-size: 14px; }
-    .control-quick-add button { grid-column: 1 / -1; padding: 10px 12px; white-space: nowrap; }
-    .control-quick-add .control-repeat-option { grid-column: 1 / -1; }
     .control-repeat-option {
       display: flex;
       align-items: center;
@@ -251,6 +243,22 @@
     }
     .control-repeat-option input { width: 17px; height: 17px; accent-color: var(--accent); }
     .control-copy-button { width: 100%; margin: 0 0 12px; }
+    .quick-add-card {
+      display: grid; gap: 10px; margin: 4px 0 18px; padding: 14px;
+      border-radius: 16px; background: var(--bg-elevated); box-shadow: var(--card-shadow);
+    }
+    .quick-add-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .quick-add-title { font-size: 14px; font-weight: 700; }
+    .quick-add-card .type-toggle { flex: 0 0 auto; }
+    .quick-add-card .type-btn { padding: 7px 12px; font-size: 13px; }
+    .quick-add-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(88px, 120px); gap: 10px; }
+    .quick-add-card .form-input { margin: 0; }
+    .quick-add-card .primary-btn { margin: 0; }
+    .quick-add-hint { margin: 0; text-align: left; font-size: 12px; }
+    .backup-card { display: grid; gap: 10px; padding: 16px; }
+    .backup-title { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 650; }
+    .backup-card .helper { margin: 0; text-align: left; }
+    .backup-card .secondary-btn { margin: 0; }
     .payment-card-tile {
       display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
       gap: 14px; margin: 12px; padding: 14px;
@@ -678,9 +686,7 @@
       .control-add-form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
       .control-add-form #control-item-name { grid-column: 1 / -1; }
       .control-add-form button { grid-column: 1 / -1; }
-      .control-row, .control-quick-add { grid-template-columns: minmax(0, 1fr) minmax(90px, 112px) 68px; gap: 5px; }
-      .control-row { padding-left: 10px; }
-      .control-quick-add { padding: 12px 10px; }
+      .control-row { grid-template-columns: minmax(0, 1fr) minmax(90px, 112px) 68px; gap: 5px; padding-left: 10px; }
       .control-row-actions { gap: 0; }
       .control-row-actions button { padding: 7px 5px; }
       .control-row-actions .save { font-size: 11px; }
@@ -973,7 +979,7 @@
       .transaction-row { gap: 9px; padding-inline: 11px; }
       .transaction-row .icon { width: 34px; height: 34px; }
       .transaction-row .amount { font-size: 14px; }
-      .control-row, .control-quick-add { grid-template-columns: minmax(0, 1fr) minmax(84px, 88px) 64px; }
+      .control-row { grid-template-columns: minmax(0, 1fr) minmax(84px, 88px) 64px; }
       .control-row-actions button { padding: 7px 4px; }
     }
 
@@ -1121,49 +1127,38 @@
           <button class="secondary-btn control-copy-button" id="copy-control-items" type="button">Trazer os itens do mês anterior</button>
           <button class="secondary-btn control-copy-button" id="restore-removed-items" type="button" hidden>Restaurar itens removidos deste mês</button>
           <p class="helper" id="monthly-control-message" role="status" aria-live="polite"></p>
+          <form class="quick-add-card" id="monthly-quick-add" data-control-group="auto">
+            <div class="quick-add-header">
+              <span class="quick-add-title">Novo lançamento</span>
+              <div class="type-toggle" id="quick-add-type" role="group" aria-label="Tipo do lançamento">
+                <button class="type-btn expense active" type="button" data-type="expense">Despesa</button>
+                <button class="type-btn income" type="button" data-type="income">Receita</button>
+              </div>
+            </div>
+            <div class="quick-add-row">
+              <input class="form-input" name="item_name" maxlength="120" placeholder="Ex.: Conta de luz, mercado, salário" aria-label="Nome do lançamento" required />
+              <input class="form-input" name="amount" inputmode="decimal" placeholder="Valor" aria-label="Valor do lançamento" />
+            </div>
+            <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" /> Fixar e repetir nos meses seguintes</label>
+            <label class="control-repeat-option control-variable-option" hidden><input name="variable_amount" type="checkbox" /> Valor varia por mês (ex.: consumo ou freelance)</label>
+            <button class="primary-btn" type="submit">Adicionar</button>
+            <p class="helper quick-add-hint" id="quick-add-hint">Despesas entram automaticamente em Gastos fixos, variáveis ou adicionais.</p>
+          </form>
           <details class="control-group" aria-labelledby="control-income-title">
             <summary class="control-group-heading"><h2 id="control-income-title"><span class="group-icon" aria-hidden="true">💰</span>Receitas</h2><span class="control-group-total" id="control-income-total">R$ 0,00</span></summary>
             <div class="control-list" id="control-income-list"></div>
-            <form class="control-quick-add" data-control-group="income">
-              <input class="form-input" name="item_name" maxlength="120" placeholder="Nome da receita" aria-label="Nome da receita" required />
-              <input class="form-input" name="amount" inputmode="decimal" placeholder="Valor" aria-label="Valor da receita" />
-              <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" /> Fixar e repetir nos meses seguintes</label>
-              <label class="control-repeat-option control-variable-option"><input name="variable_amount" type="checkbox" /> Valor varia por mês (ex.: freelance)</label>
-              <button class="primary-btn" type="submit">Adicionar</button>
-            </form>
           </details>
           <details class="control-group" aria-labelledby="control-fixed-title">
             <summary class="control-group-heading"><h2 id="control-fixed-title"><span class="group-icon" aria-hidden="true">🏠</span>Gastos fixos</h2><span class="control-group-total" id="control-fixed-total">R$ 0,00</span></summary>
             <div class="control-list" id="control-fixed-list"></div>
-            <form class="control-quick-add" data-control-group="fixed">
-              <input class="form-input" name="item_name" maxlength="120" placeholder="Nome da despesa" aria-label="Nome da despesa fixa" required />
-              <input class="form-input" name="amount" inputmode="decimal" placeholder="Valor" aria-label="Valor da despesa fixa" />
-              <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" /> Fixar e repetir nos meses seguintes</label>
-              <label class="control-repeat-option control-variable-option"><input name="variable_amount" type="checkbox" /> Valor varia por mês (ex.: consumo)</label>
-              <button class="primary-btn" type="submit">Adicionar</button>
-            </form>
           </details>
           <details class="control-group" aria-labelledby="control-variable-title">
             <summary class="control-group-heading"><h2 id="control-variable-title"><span class="group-icon" aria-hidden="true">🛒</span>Gastos variáveis</h2><span class="control-group-total" id="control-variable-total">R$ 0,00</span></summary>
             <div class="control-list" id="control-variable-list"></div>
-            <form class="control-quick-add" data-control-group="variable">
-              <input class="form-input" name="item_name" maxlength="120" placeholder="Nome da despesa" aria-label="Nome da despesa variável" required />
-              <input class="form-input" name="amount" inputmode="decimal" placeholder="Valor" aria-label="Valor da despesa variável" />
-              <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" /> Fixar e repetir nos meses seguintes</label>
-              <label class="control-repeat-option control-variable-option"><input name="variable_amount" type="checkbox" /> Valor varia por mês (ex.: consumo)</label>
-              <button class="primary-btn" type="submit">Adicionar</button>
-            </form>
           </details>
           <details class="control-group" aria-labelledby="control-additional-title">
             <summary class="control-group-heading"><h2 id="control-additional-title"><span class="group-icon" aria-hidden="true">✨</span>Gastos adicionais</h2><span class="control-group-total" id="control-additional-total">R$ 0,00</span></summary>
             <div class="control-list" id="control-additional-list"></div>
-            <form class="control-quick-add" data-control-group="additional">
-              <input class="form-input" name="item_name" maxlength="120" placeholder="Nome da despesa" aria-label="Nome da despesa adicional" required />
-              <input class="form-input" name="amount" inputmode="decimal" placeholder="Valor" aria-label="Valor da despesa adicional" />
-              <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" /> Fixar e repetir nos meses seguintes</label>
-              <label class="control-repeat-option control-variable-option"><input name="variable_amount" type="checkbox" /> Valor varia por mês (ex.: consumo)</label>
-              <button class="primary-btn" type="submit">Adicionar</button>
-            </form>
           </details>
           <div class="spending-breakdown-card" id="spending-breakdown-card">
             <div class="breakdown-header">
@@ -1350,6 +1345,17 @@
             <div class="settings-item" onclick="showScreen('recurring')"><div class="left"><div class="icon-box" style="background:#ff9500">🔄</div><span>Itens fixos e anuais</span></div><span class="chevron">›</span></div>
             <button type="button" class="settings-item action" id="open-invite"><div class="left"><div class="icon-box" style="background:#af52de">👥</div><span>Convidar membro</span></div><span class="chevron">›</span></button>
           </div>
+          <div class="section-title">Backup e uso local</div>
+          <div class="settings-group">
+            <div class="card backup-card">
+              <div class="backup-title"><span class="icon-box" style="background:#0a84ff">💾</span><span>Guardar uma cópia dos dados</span></div>
+              <p class="helper">O backup completo traz todos os meses, categorias, cartões e faturas. Os arquivos CSV abrem no Excel e em notebooks para análise local.</p>
+              <button class="secondary-btn" type="button" id="export-backup-json">Baixar backup completo (JSON)</button>
+              <button class="secondary-btn" type="button" id="export-monthly-csv">Baixar lançamentos por mês (CSV)</button>
+              <button class="secondary-btn" type="button" id="export-transactions-csv">Baixar extrato completo (CSV)</button>
+              <p class="helper" id="backup-message" role="status" aria-live="polite"></p>
+            </div>
+          </div>
           <div class="section-title">Membros</div>
           <div class="settings-group" id="household-members"></div>
           <button class="secondary-btn" type="button" id="signout">Sair da conta</button>
@@ -1506,6 +1512,15 @@
           <button class="freq-btn" type="button" data-behavior="variable">Variável</button>
         </div>
         <p class="helper" id="control-item-behavior-note"></p>
+      </div>
+      <div class="form-group" id="control-item-group-wrap">
+        <span class="form-label" id="control-item-group-label">Grupo</span>
+        <div class="freq-toggle" id="control-item-group" role="group" aria-labelledby="control-item-group-label">
+          <button class="freq-btn" type="button" data-group="fixed">Fixos</button>
+          <button class="freq-btn" type="button" data-group="variable">Variáveis</button>
+          <button class="freq-btn" type="button" data-group="additional">Adicionais</button>
+        </div>
+        <p class="helper">Corrija aqui se a classificação automática não ficou certa.</p>
       </div>
       <div class="item-dialog-actions">
         <button class="secondary-btn" type="button" id="control-item-delete">Excluir</button>
