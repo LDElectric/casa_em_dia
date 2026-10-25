@@ -2752,16 +2752,18 @@ if (!config?.url || !config?.publishableKey) {
 
     const incomeDetail = document.getElementById('month-income-detail');
     if (incomeDetail) {
+      const money = value => formatMoney(value).replace(/ /g, '\u00A0');
       incomeDetail.textContent =
-        `Fixa ${formatMoney(summary.incomeFixed)} · Variável ${formatMoney(summary.incomeVariable)}`;
+        `Fixa\u00A0${money(summary.incomeFixed)} · Variável\u00A0${money(summary.incomeVariable)}`;
     }
     const expenseDetail = document.getElementById('month-expenses-detail');
     if (expenseDetail) {
+      const money = value => formatMoney(value).replace(/ /g, '\u00A0');
       expenseDetail.textContent = [
-        `Fixos ${formatMoney(summary.expensesFixed)}`,
-        `Variáveis ${formatMoney(summary.expensesVariable)}`,
-        `Faturas ${formatMoney(summary.cardExpenses)}`,
-        `Parcelas futuras ${formatMoney(summary.forecastExpenses)}`
+        `Fixos\u00A0${money(summary.expensesFixed)}`,
+        `Variáveis\u00A0${money(summary.expensesVariable)}`,
+        `Faturas\u00A0${money(summary.cardExpenses)}`,
+        `Parcelas futuras\u00A0${money(summary.forecastExpenses)}`
       ].join(' · ');
     }
     const balanceDetail = document.getElementById('month-balance-detail');

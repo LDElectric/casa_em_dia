@@ -199,26 +199,37 @@
     .control-group-total { color: var(--text-tertiary); font-size: 13px; font-variant-numeric: tabular-nums; }
     .control-list { overflow: hidden; border-top: 1px solid var(--separator); }
     .control-row {
-      display: grid; grid-template-columns: minmax(0, 1fr) minmax(96px, 132px) auto;
-      align-items: center; gap: 8px; padding: 10px 10px 10px 14px;
+      display: grid; grid-template-columns: minmax(0, 1fr) minmax(96px, 132px) 88px;
+      align-items: start; gap: 8px; padding: 10px 10px 10px 14px;
       border-bottom: 1px solid var(--separator);
     }
     .control-row:last-child { border-bottom: 0; }
+    .control-row-description {
+      display: flex; flex-direction: column; align-items: flex-start;
+      min-width: 0;
+    }
     .control-row-name { min-width: 0; font-size: 14px; font-weight: 550; overflow-wrap: anywhere; }
     .control-amount {
       width: 100%; min-width: 0; padding: 9px 8px; border: 1px solid var(--separator);
       border-radius: 9px; background: var(--bg-tertiary); color: var(--text);
       text-align: right; font: inherit; font-size: 14px; font-variant-numeric: tabular-nums;
     }
-    .control-row-actions { display: flex; gap: 4px; }
+    .control-row-actions {
+      display: flex; align-items: center; justify-content: flex-end;
+      gap: 4px; min-height: 37px;
+    }
     .control-row-actions button {
       border: 0; background: transparent; color: var(--text-tertiary);
       border-radius: 8px; padding: 8px; font: inherit; cursor: pointer;
     }
     .control-row-actions .save { color: var(--accent); font-size: 12px; font-weight: 650; }
+    .control-previous-amount {
+      display: block; margin-top: 3px; color: var(--text-tertiary);
+      font-size: 11px; line-height: 1.35;
+    }
     .control-quick-add {
-      display: grid; grid-template-columns: minmax(0, 1fr) minmax(98px, 132px) auto;
-      gap: 8px; align-items: center; padding: 12px;
+      display: grid; grid-template-columns: minmax(0, 1fr) minmax(96px, 132px) 88px;
+      gap: 8px; align-items: center; padding: 12px 10px 12px 14px;
       border-top: 1px solid var(--separator);
     }
     .control-quick-add .form-input { min-width: 0; margin: 0; padding: 10px; font-size: 14px; }
@@ -620,7 +631,9 @@
       .control-add-form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
       .control-add-form #control-item-name { grid-column: 1 / -1; }
       .control-add-form button { grid-column: 1 / -1; }
-      .control-row { grid-template-columns: minmax(0, 1fr) minmax(90px, 112px) auto; gap: 5px; padding-left: 10px; }
+      .control-row, .control-quick-add { grid-template-columns: minmax(0, 1fr) minmax(90px, 112px) 68px; gap: 5px; }
+      .control-row { padding-left: 10px; }
+      .control-quick-add { padding: 12px 10px; }
       .control-row-actions { gap: 0; }
       .control-row-actions button { padding: 7px 5px; }
       .control-row-actions .save { font-size: 11px; }
@@ -917,6 +930,8 @@
       .transaction-row { gap: 9px; padding-inline: 11px; }
       .transaction-row .icon { width: 34px; height: 34px; }
       .transaction-row .amount { font-size: 14px; }
+      .control-row, .control-quick-add { grid-template-columns: minmax(0, 1fr) minmax(84px, 88px) 64px; }
+      .control-row-actions button { padding: 7px 4px; }
     }
 
   </style>
