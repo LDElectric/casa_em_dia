@@ -391,19 +391,6 @@
     .progress-bar { height: 6px; background: var(--bg-secondary); border-radius: 3px; overflow: hidden; }
     .progress-fill { height: 100%; border-radius: 3px; transition: width 0.4s ease; }
 
-    .fab {
-      position: absolute;
-      bottom: calc(100px + env(safe-area-inset-bottom, 0px));
-      right: 20px;
-      width: 56px; height: 56px; border-radius: 50%;
-      background: var(--accent); color: #fff; border: none;
-      box-shadow: 0 4px 16px rgba(0,122,255,0.4);
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; z-index: 90;
-    }
-    .fab:active { transform: scale(0.92); }
-    .fab svg { width: 28px; height: 28px; }
-
     .screen { display: none; height: 100%; flex-direction: column; overflow: hidden; }
     .screen.active { display: flex; }
 
@@ -534,7 +521,28 @@
       font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 6px;
       background: var(--bg-secondary); color: var(--text-tertiary);
     }
+    .recurring-tag.paused { background: rgba(255,149,0,0.14); color: var(--orange); }
+    .control-row-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 5px; }
+    .control-row-tags .recurring-tag { margin-top: 0; }
+    .control-row-toggle {
+      border: 0; background: var(--accent-soft); color: var(--accent);
+      font: inherit; font-size: 11px; font-weight: 650; padding: 2px 7px;
+      border-radius: 6px; cursor: pointer; white-space: nowrap;
+    }
+    .control-row-toggle:hover { filter: brightness(0.96); }
+    .control-card-item-actions .control-row-remove {
+      border: 0; background: transparent; color: var(--text-tertiary);
+      font: inherit; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px;
+    }
     .recurring-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+    .recurring-action {
+      border: 0; background: transparent; color: var(--accent);
+      font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; padding: 6px;
+    }
+    .recurring-amount-save {
+      border: 0; background: transparent; color: var(--accent);
+      font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; padding: 6px;
+    }
     .statement-classification {
       display: inline-block; width: fit-content; padding: 3px 7px; border-radius: 7px;
       background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 600;
@@ -564,7 +572,6 @@
       }
 
       .tab-bar { display: none !important; }
-      .fab { display: none !important; }
       .mobile-only-theme { display: none !important; }
 
       .desktop-header { display: flex; }
@@ -905,10 +912,6 @@
     .list-item .amount { white-space: nowrap; }
     .kpi-card, .chart-card { padding: 18px; }
     .chart-title { letter-spacing: -0.3px; }
-    .fab {
-      background: var(--accent);
-      box-shadow: 0 8px 22px rgba(98,88,215,0.36);
-    }
     .tab-item.active { color: var(--accent); }
     .tab-item.active svg { filter: drop-shadow(0 2px 5px var(--accent-soft)); }
     .primary-btn { background: var(--accent); }
@@ -1076,6 +1079,7 @@
           </div>
           <div class="info-box">O resumo do mês soma o que precisa sair da receita: contas e gastos lançados + total das faturas com vencimento no mês. As compras do cartão aparecem por categoria nos grupos e insights para análise, mas não são somadas de novo ao caixa.</div>
           <button class="secondary-btn control-copy-button" id="copy-control-items" type="button">Trazer os itens do mês anterior</button>
+          <button class="secondary-btn control-copy-button" id="restore-removed-items" type="button" hidden>Restaurar itens removidos deste mês</button>
           <p class="helper" id="monthly-control-message" role="status" aria-live="polite"></p>
           <details class="control-group" aria-labelledby="control-income-title">
             <summary class="control-group-heading"><h2 id="control-income-title"><span class="group-icon" aria-hidden="true">💰</span>Receitas</h2><span class="control-group-total" id="control-income-total">R$ 0,00</span></summary>
@@ -1083,7 +1087,7 @@
             <form class="control-quick-add" data-control-group="income">
               <input class="form-input" name="item_name" maxlength="120" placeholder="Nome da receita" aria-label="Nome da receita" required />
               <input class="form-input" name="amount" inputmode="decimal" placeholder="Valor" aria-label="Valor da receita" />
-              <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" /> Repetir nos meses seguintes</label>
+              <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" /> Fixar e repetir nos meses seguintes</label>
               <label class="control-repeat-option control-variable-option"><input name="variable_amount" type="checkbox" /> Valor varia por mês (ex.: freelance)</label>
               <button class="primary-btn" type="submit">Adicionar</button>
             </form>
@@ -1094,7 +1098,7 @@
             <form class="control-quick-add" data-control-group="fixed">
               <input class="form-input" name="item_name" maxlength="120" placeholder="Nome da despesa" aria-label="Nome da despesa fixa" required />
               <input class="form-input" name="amount" inputmode="decimal" placeholder="Valor" aria-label="Valor da despesa fixa" />
-              <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" /> Repetir nos meses seguintes</label>
+              <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" /> Fixar e repetir nos meses seguintes</label>
               <label class="control-repeat-option control-variable-option"><input name="variable_amount" type="checkbox" /> Valor varia por mês (ex.: consumo)</label>
               <button class="primary-btn" type="submit">Adicionar</button>
             </form>
@@ -1105,7 +1109,7 @@
             <form class="control-quick-add" data-control-group="variable">
               <input class="form-input" name="item_name" maxlength="120" placeholder="Nome da despesa" aria-label="Nome da despesa variável" required />
               <input class="form-input" name="amount" inputmode="decimal" placeholder="Valor" aria-label="Valor da despesa variável" />
-              <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" /> Repetir nos meses seguintes</label>
+              <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" /> Fixar e repetir nos meses seguintes</label>
               <label class="control-repeat-option control-variable-option"><input name="variable_amount" type="checkbox" /> Valor varia por mês (ex.: consumo)</label>
               <button class="primary-btn" type="submit">Adicionar</button>
             </form>
@@ -1116,7 +1120,7 @@
             <form class="control-quick-add" data-control-group="additional">
               <input class="form-input" name="item_name" maxlength="120" placeholder="Nome da despesa" aria-label="Nome da despesa adicional" required />
               <input class="form-input" name="amount" inputmode="decimal" placeholder="Valor" aria-label="Valor da despesa adicional" />
-              <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" /> Repetir nos meses seguintes</label>
+              <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" /> Fixar e repetir nos meses seguintes</label>
               <label class="control-repeat-option control-variable-option"><input name="variable_amount" type="checkbox" /> Valor varia por mês (ex.: consumo)</label>
               <button class="primary-btn" type="submit">Adicionar</button>
             </form>
@@ -1191,12 +1195,12 @@
       <div class="nav-header"><div class="nav-title" style="font-size:28px">Extrato</div></div>
       <div class="content">
         <div class="section">
-          <div class="month-selector">
-            <button>‹</button>
-            <span class="current">Mês atual</span>
-            <button>›</button>
+          <div class="month-selector" aria-label="Selecionar mês do extrato">
+            <button type="button" onclick="changeTransactionMonth(-1)" aria-label="Mês anterior">‹</button>
+            <span class="current" id="transaction-month-label">Este mês</span>
+            <button type="button" onclick="changeTransactionMonth(1)" aria-label="Próximo mês">›</button>
           </div>
-          <div class="list" id="all-transactions"><div class="empty-state">Nenhuma movimentação cadastrada.</div></div>
+          <div class="list" id="all-transactions"><div class="empty-state">Nenhuma movimentação neste mês.</div></div>
         </div>
       </div>
     </div>
@@ -1209,7 +1213,7 @@
       </div>
       <div class="content">
         <div class="section">
-          <div class="info-box">Modelos fixos aparecem nos próximos meses automaticamente. Para contas de consumo e receitas como freelance, marque o valor como variável: cada mês começa sem valor real e mantém o histórico separado.</div>
+          <div class="info-box">Modelos ativos aparecem nos próximos meses automaticamente. Para contas de consumo e receitas como freelance, marque o valor como variável: cada mês começa sem valor real e mantém o histórico separado. Use <strong>Pausar repetição</strong> para parar de gerar novos meses sem apagar o que já foi lançado.</div>
           <div class="section-title">Receitas fixas e variáveis</div>
           <div class="list" id="recurring-income" style="margin-bottom:20px"><div class="empty-state">Nenhuma receita recorrente cadastrada.</div></div>
           <div class="section-title">Despesas mensais</div>
@@ -1349,10 +1353,6 @@
       </div>
     </dialog>
 
-    <button class="fab" onclick="focusControlForm()" aria-label="Adicionar item ao mês">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-    </button>
-
     <!-- Tab bar mobile: Início | Extrato | Fixos | Ajustes -->
     <nav class="tab-bar">
       <button class="tab-item active" data-screen="home" onclick="showScreen('home')">
@@ -1473,8 +1473,6 @@
       document.getElementById('screen-' + id).classList.add('active');
       document.querySelectorAll('.tab-item').forEach(t => t.classList.toggle('active', t.dataset.screen === id));
       document.querySelectorAll('.desktop-nav button').forEach(t => t.classList.toggle('active', t.dataset.screen === id));
-      const fab = document.querySelector('.fab');
-      if (fab) fab.style.display = (id === 'settings' || id === 'insights' || id === 'recurring') ? 'none' : 'flex';
       if (id === 'insights') setTimeout(initCharts, 80);
     }
     let controlMonthDate = new Date();
@@ -1493,11 +1491,13 @@
     }
     window.changeControlMonth = changeControlMonth;
     window.setControlMonthKey = setControlMonthKey;
-    function focusControlForm() {
-      showScreen('home');
-      document.getElementById('monthly-control-form').scrollIntoView({ behavior: 'smooth', block: 'center' });
-      document.getElementById('control-item-name').focus({ preventScroll: true });
+    let transactionMonthDate = new Date();
+    function changeTransactionMonth(delta) {
+      transactionMonthDate = new Date(transactionMonthDate.getFullYear(), transactionMonthDate.getMonth() + delta, 1);
+      const monthKey = `${transactionMonthDate.getFullYear()}-${String(transactionMonthDate.getMonth() + 1).padStart(2, '0')}-01`;
+      window.dispatchEvent(new CustomEvent('transactions-month-changed', { detail: { monthKey } }));
     }
+    window.changeTransactionMonth = changeTransactionMonth;
 
     function openSheet(type = 'expense') {
       if (type === 'card') {

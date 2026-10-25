@@ -36,6 +36,7 @@ const state = {
   cardStatementItems: [],
   monthlyControlItems: [],
   controlMonthKey: null,
+  transactionsMonthKey: null,
   pendingCardImport: null,
   selectedImportCardId: null,
   pendingPdfLibrary: null,
@@ -153,6 +154,7 @@ if (!config?.url || !config?.publishableKey) {
       });
     });
     document.getElementById('copy-control-items').addEventListener('click', copyPreviousMonthItems);
+    document.getElementById('restore-removed-items').addEventListener('click', restoreRemovedItems);
     window.addEventListener('control-month-changed', async event => {
       state.controlMonthKey = event.detail.monthKey;
       const loaded = await loadHouseholdData();
@@ -176,6 +178,11 @@ if (!config?.url || !config?.publishableKey) {
     updateCardScopeFields();
     const today = new Date();
     state.controlMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+    state.transactionsMonthKey = state.controlMonthKey;
+    window.addEventListener('transactions-month-changed', event => {
+      state.transactionsMonthKey = event.detail.monthKey;
+      renderFinancialData();
+    });
     window.addEventListener('insights-month-changed', event => {
       state.insightsMonthIndex = event.detail.index;
       renderFinancialData();
@@ -803,6 +810,330 @@ if (!config?.url || !config?.publishableKey) {
     if (budgetGroup === 'fixed') return 'fixed';
     if (budgetGroup === 'emergency') return 'additional';
     return 'variable';
+  }
+
+  function normalizeControlName(value) {
+    return String(value ?? '').trim().toLocaleLowerCase('pt-BR');
+  }
+
+  function budgetGroupForControlGroup(controlGroup) {
+    if (controlGroup === 'fixed') return 'fixed';
+    if (controlGroup === 'additional') return 'emergency';
+    if (controlGroup === 'variable') return 'variable';
+    return null;
+  }
+
+  function controlGroupForTemplate(template) {
+    return template.transaction_type === 'income'
+      ? 'income'
+      : monthlyControlGroupForCardItem(template.budget_group);
+  }
+
+  function findRecurringTemplate(transactionType, controlGroup, itemName) {
+    const normalized = normalizeControlName(itemName);
+    return state.recurringItems.find(template =>
+      template.frequency === 'monthly'
+      && template.transaction_type === transactionType
+      && controlGroupForTemplate(template) === controlGroup
+      && normalizeControlName(template.title) === normalized);
+  }
+
+  function categoryForControlItem(transactionType, budgetGroup, itemName) {
+    const normalized = normalizeControlName(itemName);
+    const sameGroup = item => transactionType === 'income' || item.budget_group === budgetGroup;
+    const matching = state.financeCategories.find(item =>
+      item.transaction_type === transactionType
+      && sameGroup(item)
+      && [item.category, item.subcategory].some(value => normalizeControlName(value) === normalized));
+    const fallback = state.financeCategories.find(item =>
+      item.transaction_type === transactionType && sameGroup(item))
+      ?? state.financeCategories.find(item => item.transaction_type === transactionType);
+    return {
+      category: matching?.category ?? fallback?.category ?? 'Outros',
+      subcategory: matching?.subcategory ?? fallback?.subcategory
+        ?? (transactionType === 'income' ? 'Outras receitas' : 'Outras despesas')
+    };
+  }
+
+  async function deactivateDuplicateTemplates({
+    templateId, itemName, transactionType, controlGroup, frequency = 'monthly'
+  }) {
+    const normalized = normalizeControlName(itemName);
+    const duplicates = state.recurringItems.filter(template =>
+      template.id !== templateId
+      && template.active
+      && template.frequency === frequency
+      && template.transaction_type === transactionType
+      && controlGroupForTemplate(template) === controlGroup
+      && normalizeControlName(template.title) === normalized);
+    for (const duplicate of duplicates) {
+      const { error } = await supabase.from('recurring_items')
+        .update({ active: false })
+        .eq('id', duplicate.id)
+        .eq('household_id', state.membership.household_id);
+      if (error) {
+        console.warn('Could not pause duplicate recurring item:', error.message);
+      }
+    }
+    return duplicates.length;
+  }
+
+  async function saveRecurringTemplate({
+    template, itemName, transactionType, controlGroup, amountCents, amountBehavior
+  }) {
+    await deactivateDuplicateTemplates({
+      templateId: template?.id ?? null,
+      itemName,
+      transactionType,
+      controlGroup
+    });
+    const budgetGroup = budgetGroupForControlGroup(controlGroup);
+    const { category, subcategory } = categoryForControlItem(transactionType, budgetGroup, itemName);
+    const payload = {
+      title: itemName,
+      transaction_type: transactionType,
+      category,
+      subcategory,
+      budget_group: budgetGroup,
+      amount_cents: amountBehavior === 'fixed' ? amountCents : null,
+      amount_behavior: amountBehavior,
+      frequency: 'monthly',
+      month_of_year: null,
+      day_of_month: 1,
+      active: true
+    };
+    if (template) {
+      const { error } = await supabase.from('recurring_items')
+        .update(payload)
+        .eq('id', template.id)
+        .eq('household_id', state.membership.household_id);
+      return { id: template.id, error, reused: true };
+    }
+    const { data, error } = await supabase.from('recurring_items')
+      .insert({
+        ...payload,
+        household_id: state.membership.household_id,
+        created_by: state.user.id,
+        starts_month: state.controlMonthKey
+      })
+      .select('id')
+      .single();
+    return { id: data?.id ?? null, error, reused: false };
+  }
+
+  function isMissingIncomeBehaviorError(error) {
+    return Boolean(error) && (
+      error.code === '42703'
+      || error.code === 'PGRST204'
+      || error.message?.includes('income_behavior')
+    );
+  }
+
+  async function applyMonthlyControlUpdate(payload, buildQuery) {
+    let { error } = await buildQuery(supabase.from('monthly_control_items').update(payload));
+    if (isMissingIncomeBehaviorError(error)) {
+      const fallback = { ...payload };
+      delete fallback.income_behavior;
+      ({ error } = await buildQuery(supabase.from('monthly_control_items').update(fallback)));
+    }
+    return error;
+  }
+
+  async function linkMonthRowToTemplate(row, templateId, { itemName, amountCents, incomeBehavior }) {
+    return applyMonthlyControlUpdate(
+      {
+        item_name: itemName,
+        amount_cents: amountCents,
+        is_skipped: false,
+        recurring_item_id: templateId,
+        income_behavior: incomeBehavior ?? null,
+        updated_at: new Date().toISOString()
+      },
+      query => query
+        .eq('id', row.id)
+        .eq('household_id', state.membership.household_id)
+    );
+  }
+
+  async function insertMonthRow(payload) {
+    let { error } = await supabase.from('monthly_control_items').insert(payload);
+    if (isMissingIncomeBehaviorError(error)) {
+      const fallback = { ...payload };
+      delete fallback.income_behavior;
+      ({ error } = await supabase.from('monthly_control_items').insert(fallback));
+    }
+    return error;
+  }
+
+  async function linkOrCreateMonthRow({
+    existingRow, templateId, itemName, controlGroup, transactionType, amountCents, incomeBehavior
+  }) {
+    const householdId = state.membership.household_id;
+    const rowPayload = {
+      item_name: itemName,
+      amount_cents: amountCents,
+      is_skipped: false,
+      income_behavior: incomeBehavior,
+      updated_at: new Date().toISOString()
+    };
+    if (existingRow) {
+      const error = await applyMonthlyControlUpdate(rowPayload, query => query
+        .eq('id', existingRow.id)
+        .eq('household_id', householdId));
+      if (error) return error;
+      const { data: restored, error: checkError } = await supabase.from('monthly_control_items')
+        .select('id')
+        .eq('id', existingRow.id)
+        .eq('household_id', householdId)
+        .maybeSingle();
+      if (checkError) return checkError;
+      if (restored) return null;
+    }
+    const { data: linked, error } = await supabase.from('monthly_control_items')
+      .select('id')
+      .eq('household_id', householdId)
+      .eq('month_start', state.controlMonthKey)
+      .eq('recurring_item_id', templateId)
+      .maybeSingle();
+    if (error) return error;
+    if (linked) {
+      return applyMonthlyControlUpdate(rowPayload, query => query
+        .eq('id', linked.id)
+        .eq('household_id', householdId));
+    }
+    return insertMonthRow({
+      household_id: householdId,
+      month_start: state.controlMonthKey,
+      item_name: itemName,
+      transaction_type: transactionType,
+      control_group: controlGroup,
+      amount_cents: amountCents,
+      income_behavior: incomeBehavior,
+      recurring_item_id: templateId,
+      created_by: state.user.id
+    });
+  }
+
+  async function restoreRemovedItems() {
+    const householdId = state.membership?.household_id;
+    if (!householdId) return;
+    const removed = state.monthlyControlItems.filter(item =>
+      item.month_start === state.controlMonthKey && item.is_skipped);
+    if (!removed.length) {
+      showToast('Nenhum item removido neste mês.');
+      return;
+    }
+    const { error } = await supabase.from('monthly_control_items')
+      .update({ is_skipped: false, updated_at: new Date().toISOString() })
+      .eq('household_id', householdId)
+      .eq('month_start', state.controlMonthKey)
+      .eq('is_skipped', true);
+    if (error) {
+      console.error('Could not restore removed monthly items:', error.message);
+      showToast('Não foi possível restaurar os itens removidos.');
+      return;
+    }
+    showToast(removed.length === 1
+      ? 'Item restaurado neste mês.'
+      : `${removed.length} itens restaurados neste mês.`);
+    await refreshControlState();
+  }
+
+  async function makeMonthlyItemRecurring(item) {
+    const amountCents = Number(item.amount_cents ?? 0);
+    if (!amountCents) {
+      showToast('Informe o valor deste item antes de fixá-lo.');
+      return;
+    }
+    const transactionType = item.transaction_type;
+    const controlGroup = item.control_group;
+    const amountBehavior = controlGroup === 'variable' ? 'variable' : 'fixed';
+    const existingTemplate = findRecurringTemplate(transactionType, controlGroup, item.item_name);
+    const { id: templateId, error: templateError, reused } = await saveRecurringTemplate({
+      template: existingTemplate,
+      itemName: item.item_name,
+      transactionType,
+      controlGroup,
+      amountCents,
+      amountBehavior
+    });
+    if (templateError || !templateId) {
+      console.error('Could not save recurring template:', templateError?.message);
+      showToast('Não foi possível fixar este item. Tente novamente.');
+      return;
+    }
+    const { error: ensureError } = await supabase.rpc('ensure_monthly_control_items', {
+      target_month_start: state.controlMonthKey
+    });
+    if (ensureError) {
+      console.warn('Could not prepare the month from the recurring template:', ensureError.message);
+    }
+    const rowError = await linkMonthRowToTemplate(item, templateId, {
+      itemName: item.item_name,
+      amountCents,
+      incomeBehavior: transactionType === 'income' ? amountBehavior : null
+    });
+    if (rowError) {
+      console.error('Could not link the monthly item to the template:', rowError.message);
+      showToast('O modelo foi salvo, mas este mês não foi vinculado. Atualize a página.');
+      return;
+    }
+    showToast(reused
+      ? 'Repetição reativada para este item.'
+      : 'Item fixado; ele aparecerá nos próximos meses.');
+    await loadHouseholdData();
+  }
+
+  async function stopMonthlyItemRecurring(item) {
+    const template = state.recurringItems.find(row => row.id === item.recurring_item_id);
+    if (!template) {
+      showToast('Este item não está vinculado a um modelo fixo.');
+      await loadHouseholdData();
+      return;
+    }
+    const monthLabel = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' })
+      .format(new Date(`${item.month_start}T12:00:00`));
+    if (!window.confirm(`Parar de repetir "${item.item_name}" a partir de ${monthLabel}? Os lançamentos futuros já gerados deste item serão removidos.`)) {
+      return;
+    }
+    const householdId = state.membership.household_id;
+    const { error: templateError } = await supabase.from('recurring_items')
+      .update({ active: false })
+      .eq('id', template.id)
+      .eq('household_id', householdId);
+    if (templateError) {
+      console.error('Could not pause recurring item:', templateError.message);
+      showToast('Não foi possível parar a repetição deste item.');
+      return;
+    }
+    const { error: futureError } = await supabase.from('monthly_control_items')
+      .delete()
+      .eq('recurring_item_id', template.id)
+      .gt('month_start', item.month_start)
+      .eq('household_id', householdId);
+    if (futureError) {
+      console.error('Could not remove future monthly items:', futureError.message);
+      showToast('A repetição foi pausada, mas revise os meses futuros.');
+    } else {
+      showToast('Este item não se repete mais nos próximos meses.');
+    }
+    await loadHouseholdData();
+  }
+
+  async function deleteTransactionEntry(item) {
+    if (!item.source_transaction_id) return;
+    if (!window.confirm(`Remover "${item.title}" do extrato?`)) return;
+    const { error } = await supabase.from('transactions')
+      .delete()
+      .eq('id', item.source_transaction_id)
+      .eq('household_id', state.membership.household_id);
+    if (error) {
+      console.error('Could not delete transaction:', error.message);
+      showToast('Não foi possível remover este lançamento.');
+      return;
+    }
+    showToast('Lançamento removido.');
+    await loadHouseholdData();
   }
 
   async function updateCardItemControlGroup(item, controlGroup, select) {
@@ -2284,37 +2615,89 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('save-message').textContent = 'Salvando...';
 
     let result;
+    const currentMonthStart = (() => {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    })();
+    const targetMonthStart = state.controlMonthKey ?? currentMonthStart;
     if (selectedFrequency === 'once') {
       result = await supabase.from('transactions').insert({
           ...payload,
-          transaction_date: localDate(new Date())
+          transaction_date: targetMonthStart === currentMonthStart
+            ? localDate(new Date())
+            : targetMonthStart
         });
     } else {
-      const today = new Date();
-      const startsMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
-      result = await supabase.from('recurring_items').insert({
-          ...payload,
-          frequency: selectedFrequency,
-          amount_behavior: variableAmount ? 'variable' : 'fixed',
-          starts_month: startsMonth,
-          day_of_month: new Date().getDate(),
-          month_of_year: selectedFrequency === 'yearly'
-            ? Number(document.getElementById('transaction-month').value)
-            : null
-        }).select('id').single();
-      if (!result.error) {
+      const matchingTemplate = state.recurringItems.find(template =>
+        template.transaction_type === transactionType
+        && template.frequency === selectedFrequency
+        && normalizeControlName(template.title) === normalizeControlName(title));
+      await deactivateDuplicateTemplates({
+        templateId: matchingTemplate?.id ?? null,
+        itemName: title,
+        transactionType,
+        controlGroup: transactionType === 'income'
+          ? 'income'
+          : monthlyControlGroupForCardItem(budgetGroup),
+        frequency: selectedFrequency
+      });
+      let templateId = matchingTemplate?.id ?? null;
+      if (matchingTemplate) {
+        result = await supabase.from('recurring_items')
+          .update({
+            title: payload.title,
+            category: payload.category,
+            subcategory: payload.subcategory,
+            budget_group: transactionType === 'expense' ? budgetGroup : null,
+            amount_cents: variableAmount ? null : amount,
+            amount_behavior: variableAmount ? 'variable' : 'fixed',
+            month_of_year: selectedFrequency === 'yearly'
+              ? Number(document.getElementById('transaction-month').value)
+              : null,
+            active: true
+          })
+          .eq('id', matchingTemplate.id)
+          .eq('household_id', state.membership.household_id);
+      } else {
+        result = await supabase.from('recurring_items').insert({
+            household_id: payload.household_id,
+            created_by: payload.created_by,
+            title: payload.title,
+            transaction_type: payload.transaction_type,
+            category: payload.category,
+            subcategory: payload.subcategory,
+            budget_group: transactionType === 'expense' ? budgetGroup : null,
+            amount_cents: variableAmount ? null : amount,
+            amount_behavior: variableAmount ? 'variable' : 'fixed',
+            frequency: selectedFrequency,
+            starts_month: targetMonthStart,
+            day_of_month: new Date().getDate(),
+            month_of_year: selectedFrequency === 'yearly'
+              ? Number(document.getElementById('transaction-month').value)
+              : null
+          }).select('id').single();
+        templateId = result.data?.id ?? null;
+      }
+      if (!result.error && templateId) {
         const { error: ensureError } = await supabase.rpc('ensure_monthly_control_items', {
-          target_month_start: startsMonth
+          target_month_start: targetMonthStart
         });
         if (ensureError) {
           result = { error: ensureError };
-        } else if (variableAmount && amount != null && selectedFrequency === 'monthly') {
-          const { error: initialAmountError } = await supabase.from('monthly_control_items')
-            .update({ amount_cents: amount })
-            .eq('recurring_item_id', result.data.id)
-            .eq('month_start', startsMonth)
-            .eq('household_id', state.membership.household_id);
-          if (initialAmountError) result = { error: initialAmountError };
+        } else if (selectedFrequency === 'monthly' && amount != null) {
+          const monthError = await applyMonthlyControlUpdate(
+            {
+              amount_cents: amount,
+              ...(transactionType === 'income' && {
+                income_behavior: variableAmount ? 'variable' : 'fixed'
+              })
+            },
+            query => query
+              .eq('recurring_item_id', templateId)
+              .eq('month_start', targetMonthStart)
+              .eq('household_id', state.membership.household_id)
+          );
+          if (monthError) result = { error: monthError };
         }
       }
     }
@@ -2322,7 +2705,9 @@ if (!config?.url || !config?.publishableKey) {
 
     if (result.error) {
       console.error('Could not save household entry:', result.error.message);
-      document.getElementById('save-message').textContent = 'Não foi possível salvar. Tente novamente.';
+      document.getElementById('save-message').textContent = result.error.code === '23505'
+        ? 'Já existe um item fixo com esse nome. Ajuste o modelo em Fixos.'
+        : 'Não foi possível salvar. Tente novamente.';
       return;
     }
 
@@ -2380,43 +2765,61 @@ if (!config?.url || !config?.publishableKey) {
           ? `${new Intl.DateTimeFormat('pt-BR', { month: 'long' }).format(new Date(2020, item.month_of_year - 1, 1))} · dia ${item.day_of_month}`
           : `Todo mês · dia ${item.day_of_month}`;
         const classification = `${item.category} · ${item.subcategory}`;
-        subtitle.textContent = `${schedule} · ${classification} · ${
-          item.amount_cents == null ? 'Valor pendente' : formatMoney(Number(item.amount_cents))
-        }`;
+        const amountLabel = item.amount_behavior === 'variable'
+          ? 'Valor definido a cada mês'
+          : item.amount_cents == null ? 'Valor pendente' : formatMoney(Number(item.amount_cents));
+        subtitle.textContent = `${schedule} · ${classification} · ${amountLabel}`;
         info.append(title, subtitle);
-        if (item.transaction_type === 'income') {
-          const behavior = document.createElement('span');
-          behavior.className = 'recurring-tag';
-          behavior.textContent = item.amount_behavior === 'variable'
-            ? 'Receita variável'
-            : 'Receita fixa';
-          info.append(behavior);
+        const tags = document.createElement('div');
+        tags.className = 'control-row-tags';
+        const behavior = document.createElement('span');
+        behavior.className = 'recurring-tag';
+        const isIncome = item.transaction_type === 'income';
+        behavior.textContent = item.amount_behavior === 'variable'
+          ? isIncome ? 'Receita variável' : 'Despesa variável'
+          : isIncome ? 'Receita fixa' : 'Despesa fixa';
+        tags.append(behavior);
+        if (!item.active) {
+          const paused = document.createElement('span');
+          paused.className = 'recurring-tag paused';
+          paused.textContent = 'Repetição pausada';
+          tags.append(paused);
         }
-        if (item.amount_cents == null) {
+        info.append(tags);
+        if (item.amount_behavior === 'fixed') {
           const amountInput = document.createElement('input');
           amountInput.className = 'form-input';
           amountInput.inputMode = 'decimal';
-          amountInput.placeholder = 'Preencha o valor mensal';
-          amountInput.setAttribute('aria-label', `Valor de ${item.title}`);
+          amountInput.placeholder = 'Valor mensal';
+          amountInput.value = item.amount_cents == null
+            ? ''
+            : (Number(item.amount_cents) / 100).toFixed(2).replace('.', ',');
+          amountInput.setAttribute('aria-label', `Valor mensal de ${item.title}`);
           const saveAmount = document.createElement('button');
-          saveAmount.className = 'remove-member';
+          saveAmount.className = 'recurring-amount-save';
           saveAmount.type = 'button';
           saveAmount.textContent = 'Salvar valor';
-          saveAmount.addEventListener('click', () => fillRecurringAmount(item, amountInput.value));
+          saveAmount.addEventListener('click', () => fillRecurringAmount(item, amountInput.value, saveAmount));
           info.append(amountInput, saveAmount);
         }
         const actions = document.createElement('div');
         actions.className = 'recurring-actions';
-        if (item.transaction_type === 'income') {
-          const toggleBehavior = document.createElement('button');
-          toggleBehavior.className = 'remove-member';
-          toggleBehavior.type = 'button';
-          toggleBehavior.textContent = item.amount_behavior === 'variable'
-            ? 'Marcar como fixa'
-            : 'Marcar como variável';
-          toggleBehavior.addEventListener('click', () => toggleRecurringIncomeBehavior(item));
-          actions.append(toggleBehavior);
-        }
+        const toggleBehavior = document.createElement('button');
+        toggleBehavior.className = 'recurring-action';
+        toggleBehavior.type = 'button';
+        toggleBehavior.textContent = item.amount_behavior === 'variable'
+          ? 'Marcar como fixa'
+          : 'Marcar como variável';
+        toggleBehavior.setAttribute('aria-label', `${toggleBehavior.textContent} ${item.title}`);
+        toggleBehavior.addEventListener('click', () => toggleRecurringAmountBehavior(item));
+        actions.append(toggleBehavior);
+        const toggleActive = document.createElement('button');
+        toggleActive.className = 'recurring-action';
+        toggleActive.type = 'button';
+        toggleActive.textContent = item.active ? 'Pausar repetição' : 'Reativar repetição';
+        toggleActive.setAttribute('aria-label', `${toggleActive.textContent} de ${item.title}`);
+        toggleActive.addEventListener('click', () => toggleRecurringActive(item));
+        actions.append(toggleActive);
         const remove = document.createElement('button');
         remove.className = 'remove-member';
         remove.type = 'button';
@@ -2430,10 +2833,10 @@ if (!config?.url || !config?.publishableKey) {
     }
   }
 
-  async function toggleRecurringIncomeBehavior(item) {
+  async function toggleRecurringAmountBehavior(item) {
     const nextBehavior = item.amount_behavior === 'variable' ? 'fixed' : 'variable';
     if (nextBehavior === 'fixed' && item.amount_cents == null) {
-      showToast('Preencha o valor mensal antes de marcar esta receita como fixa.');
+      showToast('Preencha o valor mensal antes de marcar este item como fixo.');
       return;
     }
     const { error } = await supabase.from('recurring_items')
@@ -2441,55 +2844,111 @@ if (!config?.url || !config?.publishableKey) {
       .eq('id', item.id)
       .eq('household_id', state.membership.household_id);
     if (error) {
-      console.error('Could not change recurring income behavior:', error.message);
-      showToast('Não foi possível alterar a classificação da receita.');
+      console.error('Could not change recurring amount behavior:', error.message);
+      showToast('Não foi possível alterar a classificação do item.');
       return;
     }
-    const { error: monthlyError } = await supabase.from('monthly_control_items')
-      .update({ income_behavior: nextBehavior })
-      .eq('recurring_item_id', item.id)
-      .gte('month_start', state.controlMonthKey)
-      .eq('household_id', state.membership.household_id);
-    if (monthlyError) {
-      console.error('Could not update income behavior for monthly items:', monthlyError.message);
-      showToast('A receita foi atualizada, mas os meses seguintes precisam ser recarregados.');
-      return;
+    if (item.transaction_type === 'income') {
+      const { error: monthlyError } = await supabase.from('monthly_control_items')
+        .update({ income_behavior: nextBehavior })
+        .eq('recurring_item_id', item.id)
+        .gte('month_start', state.controlMonthKey)
+        .eq('household_id', state.membership.household_id);
+      if (monthlyError) {
+        console.error('Could not update income behavior for monthly items:', monthlyError.message);
+        showToast('O modelo foi atualizado, mas os meses seguintes precisam ser recarregados.');
+        return;
+      }
     }
     showToast(nextBehavior === 'fixed'
-      ? 'Receita marcada como fixa.'
-      : 'Receita marcada como variável.');
+      ? 'Item marcado como fixo.'
+      : 'Item marcado como variável.');
     await loadHouseholdData();
   }
 
-  async function fillRecurringAmount(item, rawAmount) {
+  async function toggleRecurringActive(item) {
+    const nextActive = !item.active;
+    if (!nextActive && !window.confirm(`Pausar a repetição de "${item.title}"? Os lançamentos já registrados continuam no histórico.`)) {
+      return;
+    }
+    const { error } = await supabase.from('recurring_items')
+      .update({ active: nextActive })
+      .eq('id', item.id)
+      .eq('household_id', state.membership.household_id);
+    if (error) {
+      console.error('Could not change recurring activation:', error.message);
+      showToast('Não foi possível alterar a repetição deste item.');
+      return;
+    }
+    if (!nextActive) {
+      const { error: futureError } = await supabase.from('monthly_control_items')
+        .delete()
+        .eq('recurring_item_id', item.id)
+        .gt('month_start', state.controlMonthKey)
+        .eq('household_id', state.membership.household_id);
+      if (futureError) {
+        console.warn('Could not remove future monthly items:', futureError.message);
+      }
+    }
+    showToast(nextActive
+      ? 'Repetição reativada; o item volta a aparecer nos próximos meses.'
+      : 'Repetição pausada; os meses seguintes deixam de ser gerados.');
+    await loadHouseholdData();
+  }
+
+  async function fillRecurringAmount(item, rawAmount, button) {
     const amount = parseAmount(rawAmount);
     if (!Number.isSafeInteger(amount) || amount <= 0) {
       showToast('Informe um valor maior que zero.');
       return;
     }
+    if (button) button.disabled = true;
     const { error } = await supabase.from('recurring_items')
       .update({ amount_cents: amount })
       .eq('id', item.id)
       .eq('household_id', state.membership.household_id);
     if (error) {
+      if (button) button.disabled = false;
       console.error('Could not set recurring item amount:', error.message);
       showToast('Não foi possível salvar o valor.');
       return;
     }
+    const { error: monthlyError } = await supabase.from('monthly_control_items')
+      .update({ amount_cents: amount, updated_at: new Date().toISOString() })
+      .eq('recurring_item_id', item.id)
+      .gte('month_start', state.controlMonthKey)
+      .eq('household_id', state.membership.household_id);
+    if (monthlyError) {
+      console.warn('Could not update monthly items from the template:', monthlyError.message);
+    }
+    showToast('Valor mensal atualizado.');
     await loadHouseholdData();
   }
 
   async function deleteRecurringItem(item) {
+    if (!window.confirm(`Remover o modelo "${item.title}"? Os lançamentos já registrados continuam no histórico.`)) {
+      return;
+    }
+    const householdId = state.membership.household_id;
+    const { error: futureError } = await supabase.from('monthly_control_items')
+      .delete()
+      .eq('recurring_item_id', item.id)
+      .gt('month_start', state.controlMonthKey)
+      .eq('household_id', householdId);
+    if (futureError) {
+      console.warn('Could not remove future monthly items before deleting the template:', futureError.message);
+    }
     const { error } = await supabase
       .from('recurring_items')
       .delete()
       .eq('id', item.id)
-      .eq('household_id', state.membership.household_id);
+      .eq('household_id', householdId);
     if (error) {
       console.error('Could not delete recurring item:', error.message);
       showToast('Não foi possível remover o item.');
       return;
     }
+    showToast('Modelo removido.');
     await loadHouseholdData();
   }
 
@@ -2515,7 +2974,9 @@ if (!config?.url || !config?.publishableKey) {
     const detailEntries = monthlyEntries.filter(item =>
       item.payment_method === 'credit' || item.source_transaction_id);
     for (const item of detailEntries) {
-      const groupKey = monthlyControlGroupForCardItem(item.budget_group);
+      const groupKey = item.transaction_type === 'income'
+        ? 'income'
+        : monthlyControlGroupForCardItem(item.budget_group);
       groups[groupKey].cardRows ??= [];
       groups[groupKey].cardRows.push(item);
     }
@@ -2558,9 +3019,9 @@ if (!config?.url || !config?.publishableKey) {
             && row.amount_cents != null)?.amount_cents
           : null;
         const behavior = item.transaction_type === 'income'
-          ? item.income_behavior ?? recurring?.amount_behavior ?? 'variable'
+          ? recurring ? item.income_behavior ?? recurring.amount_behavior ?? 'variable' : 'fixed'
           : recurring?.amount_behavior ?? (item.control_group === 'fixed' ? 'fixed' : 'variable');
-        const isVariable = behavior === 'variable';
+        const isVariable = Boolean(recurring) && behavior === 'variable';
         const amountLabel = isVariable
           ? `Valor real de ${item.item_name}`
           : `Valor mensal de ${item.item_name}`;
@@ -2571,18 +3032,34 @@ if (!config?.url || !config?.publishableKey) {
             : `Anterior: ${formatMoney(Number(previousAmount))}`;
         }
         description.append(name);
+        const isRecurring = Boolean(recurring?.active);
+        const tags = document.createElement('div');
+        tags.className = 'control-row-tags';
         const type = document.createElement('span');
         type.className = 'recurring-tag';
         type.textContent = item.transaction_type === 'income'
-          ? isVariable ? 'Receita variável · informe o valor do mês' : 'Receita fixa · repete mensalmente'
-          : isVariable ? 'Valor variável · preencher a cada mês' : 'Fixo · repete mensalmente';
+          ? isRecurring
+            ? isVariable ? 'Receita variável · valor do mês' : 'Receita fixa · repete mensalmente'
+            : 'Receita avulsa deste mês'
+          : isRecurring
+            ? isVariable ? 'Valor variável · preencher a cada mês' : 'Fixo · repete mensalmente'
+            : 'Lançamento único';
+        tags.append(type);
+        const repeat = document.createElement('button');
+        repeat.type = 'button';
+        repeat.className = 'control-row-toggle';
+        repeat.textContent = isRecurring ? '⏸ Não repetir' : '📌 Fixar e repetir';
+        repeat.setAttribute('aria-label', `${isRecurring ? 'Parar de repetir' : 'Fixar e repetir'} ${item.item_name} nos próximos meses`);
+        repeat.addEventListener('click', () => (isRecurring
+          ? stopMonthlyItemRecurring(item)
+          : makeMonthlyItemRecurring(item)));
+        tags.append(repeat);
+        description.append(tags);
         if (isVariable && previousAmount != null) {
           const estimate = document.createElement('span');
           estimate.className = 'control-previous-amount';
           estimate.textContent = `Último valor: ${formatMoney(Number(previousAmount))}`;
-          description.append(type, estimate);
-        } else {
-          description.append(type);
+          description.append(estimate);
         }
         const actions = document.createElement('div');
         actions.className = 'control-row-actions';
@@ -2622,18 +3099,30 @@ if (!config?.url || !config?.publishableKey) {
         actions.className = 'control-card-item-actions';
         const amount = document.createElement('strong');
         amount.textContent = formatMoney(item.amount_cents);
-        const move = document.createElement('select');
-        move.className = 'form-input';
-        move.setAttribute('aria-label', `Grupo de ${item.title}`);
-        for (const [value, label] of [
-          ['fixed', 'Fixo'],
-          ['variable', 'Variável'],
-          ['additional', 'Adicional']
-        ]) move.add(new Option(label, value));
-        move.value = monthlyControlGroupForCardItem(item.budget_group);
-        move.addEventListener('change', () =>
-          updateCardItemControlGroup(item, move.value, move));
-        actions.append(amount, move);
+        actions.append(amount);
+        if (item.transaction_type === 'expense') {
+          const move = document.createElement('select');
+          move.className = 'form-input';
+          move.setAttribute('aria-label', `Grupo de ${item.title}`);
+          for (const [value, label] of [
+            ['fixed', 'Fixo'],
+            ['variable', 'Variável'],
+            ['additional', 'Adicional']
+          ]) move.add(new Option(label, value));
+          move.value = monthlyControlGroupForCardItem(item.budget_group);
+          move.addEventListener('change', () =>
+            updateCardItemControlGroup(item, move.value, move));
+          actions.append(move);
+        }
+        if (item.source_transaction_id) {
+          const remove = document.createElement('button');
+          remove.type = 'button';
+          remove.className = 'control-row-remove';
+          remove.textContent = '×';
+          remove.setAttribute('aria-label', `Remover ${item.title} do extrato`);
+          remove.addEventListener('click', () => deleteTransactionEntry(item));
+          actions.append(remove);
+        }
         row.append(info, actions);
         list.append(row);
       }
@@ -2732,10 +3221,16 @@ if (!config?.url || !config?.publishableKey) {
     renderUpcomingStatementBanner(monthKey);
     renderSpendingBreakdown(monthKey);
     renderFutureForecast(monthKey);
-    document.getElementById('copy-control-items').disabled = currentRows.length > 0;
-    document.getElementById('copy-control-items').textContent = currentRows.length
-      ? 'Este mês já tem itens cadastrados'
-      : 'Trazer os itens do mês anterior';
+    const copyButton = document.getElementById('copy-control-items');
+    copyButton.disabled = false;
+    copyButton.textContent = 'Trazer os itens que faltam do mês anterior';
+    const removedRows = state.monthlyControlItems.filter(item =>
+      item.month_start === monthStart && item.is_skipped);
+    const restoreButton = document.getElementById('restore-removed-items');
+    restoreButton.hidden = removedRows.length === 0;
+    restoreButton.textContent = removedRows.length === 1
+      ? 'Restaurar 1 item removido deste mês'
+      : `Restaurar ${removedRows.length} itens removidos deste mês`;
   }
 
   function renderMonthlySummary(monthKey) {
@@ -2976,117 +3471,122 @@ if (!config?.url || !config?.publishableKey) {
   async function addMonthlyControlItem(event) {
     event.preventDefault();
     const form = event.currentTarget;
+    const submitButton = form.querySelector('button[type="submit"]');
     const itemName = form.elements.item_name.value.trim();
     const controlGroup = form.dataset.controlGroup;
     const rawAmount = form.elements.amount.value.trim();
     const amountCents = rawAmount ? parseAmount(rawAmount) : null;
     const repeatMonthly = form.elements.repeat_monthly.checked;
     const variableAmount = repeatMonthly && Boolean(form.elements.variable_amount?.checked);
-    const incomeBehavior = controlGroup === 'income'
-      ? repeatMonthly && !variableAmount ? 'fixed' : 'variable'
-      : null;
     if (!itemName || itemName.length > 120
       || !['income', 'fixed', 'variable', 'additional'].includes(controlGroup)
       || (rawAmount && (!Number.isSafeInteger(amountCents) || amountCents < 0))
       || (repeatMonthly && !variableAmount && (!Number.isSafeInteger(amountCents) || amountCents <= 0))) {
-      setMessage('monthly-control-message', 'Informe o nome e um valor válido (ou deixe o valor em branco).');
+      reportControlMessage('Informe o nome e um valor válido (ou deixe o valor em branco).');
       return;
     }
-    if (state.monthlyControlItems.some(item =>
-      item.month_start === state.controlMonthKey
-      && item.control_group === controlGroup
-      && item.item_name.trim().toLocaleLowerCase('pt-BR') === itemName.toLocaleLowerCase('pt-BR'))) {
-      setMessage('monthly-control-message', 'Esse item já existe neste grupo do mês.');
-      return;
-    }
-    if (repeatMonthly) {
-      const transactionType = controlGroup === 'income' ? 'income' : 'expense';
-      const budgetGroup = controlGroup === 'fixed' ? 'fixed'
-        : controlGroup === 'additional' ? 'emergency'
-          : controlGroup === 'variable' ? 'variable' : null;
-      const amountBehavior = variableAmount ? 'variable' : 'fixed';
-      const matchingCategory = state.financeCategories.find(item =>
-        item.transaction_type === transactionType
-        && (transactionType === 'income' || item.budget_group === budgetGroup)
-        && [item.category, item.subcategory].some(value =>
-          value.toLocaleLowerCase('pt-BR') === itemName.toLocaleLowerCase('pt-BR')));
-      const fallbackCategory = state.financeCategories.find(item =>
-        item.transaction_type === transactionType
-        && (transactionType === 'income' || item.budget_group === budgetGroup))
-        ?? state.financeCategories.find(item => item.transaction_type === transactionType);
-      const { data: template, error: templateError } = await supabase.from('recurring_items')
-        .insert({
-          household_id: state.membership.household_id,
-          created_by: state.user.id,
-          title: itemName,
-          transaction_type: transactionType,
-          category: matchingCategory?.category ?? fallbackCategory?.category ?? 'Outros',
-          subcategory: matchingCategory?.subcategory ?? fallbackCategory?.subcategory ?? 'Outras despesas',
-          budget_group: budgetGroup,
-          amount_cents: variableAmount ? null : amountCents,
-          amount_behavior: amountBehavior,
-          frequency: 'monthly',
-          day_of_month: 1,
-          month_of_year: null,
-          starts_month: state.controlMonthKey,
-          active: true
-        })
-        .select('id')
-        .single();
-      if (templateError) {
-        console.error('Could not create recurring monthly item:', templateError.message);
-        setMessage('monthly-control-message', 'Não foi possível salvar o modelo mensal. Confira se a migração está aplicada e se o nome já existe.');
-        return;
-      }
-      const { error: ensureError } = await supabase.rpc('ensure_monthly_control_items', {
-        target_month_start: state.controlMonthKey
-      });
-      if (ensureError) {
-        console.error('Could not create this month from the recurring template:', ensureError.message);
-        setMessage('monthly-control-message', 'O modelo foi salvo, mas este mês não foi preparado. Atualize a página após aplicar a migração mensal.');
-        return;
-      }
-      if (variableAmount && amountCents != null) {
-        const { error: actualAmountError } = await supabase.from('monthly_control_items')
-          .update({ amount_cents: amountCents })
-          .eq('recurring_item_id', template.id)
-          .eq('month_start', state.controlMonthKey)
-          .eq('household_id', state.membership.household_id);
-        if (actualAmountError) {
-          console.error('Could not save the initial variable monthly amount:', actualAmountError.message);
-          setMessage('O modelo foi criado, mas não foi possível salvar o valor real deste mês.');
-          return;
-        }
-      }
-      form.reset();
-      setMessage('monthly-control-message', 'Modelo mensal salvo; ele aparecerá automaticamente nos próximos meses.');
-      await refreshControlState();
-      return;
-    }
-    const payload = {
-      household_id: state.membership.household_id,
-      month_start: state.controlMonthKey,
-      item_name: itemName,
-      transaction_type: controlGroup === 'income' ? 'income' : 'expense',
-      control_group: controlGroup,
-      amount_cents: amountCents,
-      income_behavior: incomeBehavior,
-      created_by: state.user.id
-    };
-    let { error } = await supabase.from('monthly_control_items').insert(payload);
-    if (error && (error.code === '42703' || error.message?.includes('income_behavior'))) {
-      const fallbackPayload = { ...payload };
-      delete fallbackPayload.income_behavior;
-      ({ error } = await supabase.from('monthly_control_items').insert(fallbackPayload));
-    }
-    if (error) {
-      console.error('Could not add monthly control item:', error.message);
-      setMessage('monthly-control-message', 'Não foi possível adicionar o item. Confira se o nome já existe.');
-      return;
-    }
-    form.reset();
+    const transactionType = controlGroup === 'income' ? 'income' : 'expense';
+    if (submitButton) submitButton.disabled = true;
     setMessage('monthly-control-message', '');
-    await refreshControlState();
+    try {
+      const { data: monthRows, error: rowsError } = await supabase.from('monthly_control_items')
+        .select('id, item_name, is_skipped, recurring_item_id')
+        .eq('household_id', state.membership.household_id)
+        .eq('month_start', state.controlMonthKey)
+        .eq('control_group', controlGroup);
+      if (rowsError) throw rowsError;
+      const normalized = normalizeControlName(itemName);
+      const existingRow = (monthRows ?? []).find(row => normalizeControlName(row.item_name) === normalized);
+
+      if (existingRow && !existingRow.is_skipped) {
+        reportControlMessage('Esse item já existe neste grupo do mês. Edite o valor na lista abaixo.');
+        return;
+      }
+
+      if (repeatMonthly) {
+        const amountBehavior = variableAmount ? 'variable' : 'fixed';
+        const { id: templateId, error: templateError } = await saveRecurringTemplate({
+          template: findRecurringTemplate(transactionType, controlGroup, itemName),
+          itemName,
+          transactionType,
+          controlGroup,
+          amountCents,
+          amountBehavior
+        });
+        if (templateError || !templateId) throw templateError ?? new Error('model not created');
+        const { error: ensureError } = await supabase.rpc('ensure_monthly_control_items', {
+          target_month_start: state.controlMonthKey
+        });
+        if (ensureError) {
+          console.warn('Could not prepare the month from the recurring template:', ensureError.message);
+        }
+        const rowError = await linkOrCreateMonthRow({
+          existingRow,
+          templateId,
+          itemName,
+          controlGroup,
+          transactionType,
+          amountCents,
+          incomeBehavior: transactionType === 'income' ? amountBehavior : null
+        });
+        if (rowError) throw rowError;
+        form.reset();
+        setMessage('monthly-control-message', 'Item fixo salvo; ele aparecerá automaticamente nos próximos meses.');
+        showToast(existingRow
+          ? 'Item restaurado e fixado para os próximos meses.'
+          : 'Item fixo salvo; ele aparecerá nos próximos meses.');
+        await loadHouseholdData();
+        return;
+      }
+
+      let error;
+      if (existingRow) {
+        error = await applyMonthlyControlUpdate(
+          {
+            item_name: itemName,
+            amount_cents: amountCents,
+            is_skipped: false,
+            recurring_item_id: null,
+            income_behavior: null,
+            updated_at: new Date().toISOString()
+          },
+          query => query
+            .eq('id', existingRow.id)
+            .eq('household_id', state.membership.household_id)
+        );
+      } else {
+        error = await insertMonthRow({
+          household_id: state.membership.household_id,
+          month_start: state.controlMonthKey,
+          item_name: itemName,
+          transaction_type: transactionType,
+          control_group: controlGroup,
+          amount_cents: amountCents,
+          income_behavior: null,
+          created_by: state.user.id
+        });
+      }
+      if (error) throw error;
+      form.reset();
+      setMessage('monthly-control-message', '');
+      showToast(existingRow ? 'Item restaurado neste mês.' : 'Item adicionado ao mês.');
+      await refreshControlState();
+    } catch (error) {
+      console.error('Could not add monthly control item:', error?.message ?? error);
+      const recurringConflict = String(error?.message ?? '').includes('recurring_items');
+      reportControlMessage(error?.code === '23505'
+        ? recurringConflict
+          ? 'Já existe um item fixo com esse nome. Ajuste o modelo em Fixos.'
+          : 'Já existe um item com esse nome neste grupo do mês.'
+        : 'Não foi possível adicionar o item. Tente novamente.');
+    } finally {
+      if (submitButton) submitButton.disabled = false;
+    }
+  }
+
+  function reportControlMessage(message) {
+    setMessage('monthly-control-message', message);
+    if (message) showToast(message);
   }
 
   async function updateMonthlyControlItem(item, itemName, rawAmount, button) {
@@ -3101,18 +3601,19 @@ if (!config?.url || !config?.publishableKey) {
       existing.id !== item.id
       && existing.month_start === item.month_start
       && existing.control_group === item.control_group
-      && existing.item_name.trim().toLocaleLowerCase('pt-BR') === normalizedName.toLocaleLowerCase('pt-BR'));
+      && normalizeControlName(existing.item_name) === normalizeControlName(normalizedName));
     if (duplicate) {
       showToast('Já existe outro item com esse nome neste grupo.');
       return;
     }
     button.disabled = true;
     const recurring = state.recurringItems.find(template => template.id === item.recurring_item_id);
+    const isFixedTemplate = recurring?.amount_behavior === 'fixed';
     if (recurring) {
       const { error: templateError } = await supabase.from('recurring_items')
         .update({
           title: normalizedName,
-          ...(recurring.amount_behavior === 'fixed' && { amount_cents: amountCents })
+          ...(isFixedTemplate && { amount_cents: amountCents })
         })
         .eq('id', recurring.id)
         .eq('household_id', state.membership.household_id);
@@ -3133,14 +3634,37 @@ if (!config?.url || !config?.publishableKey) {
       showToast('Não foi possível salvar este item.');
       return;
     }
-    showToast('Valor mensal salvo.');
+    if (recurring) {
+      const { error: futureError } = await supabase.from('monthly_control_items')
+        .update({
+          item_name: normalizedName,
+          ...(isFixedTemplate && { amount_cents: amountCents }),
+          updated_at: new Date().toISOString()
+        })
+        .eq('recurring_item_id', recurring.id)
+        .gt('month_start', item.month_start)
+        .eq('household_id', state.membership.household_id);
+      if (futureError) {
+        console.warn('Could not apply the change to future months:', futureError.message);
+        showToast('Valor salvo neste mês, mas não foi possível atualizar os meses futuros.');
+        await loadHouseholdData();
+        return;
+      }
+      showToast('Item e meses seguintes atualizados.');
+      await loadHouseholdData();
+      return;
+    }
+    showToast('Item salvo.');
     await refreshControlState();
   }
 
   async function deleteMonthlyControlItem(item) {
-    if (!window.confirm(`Remover "${item.item_name}" deste mês?`)) return;
-    const recurring = Boolean(item.recurring_item_id);
-    const { error } = recurring
+    const template = state.recurringItems.find(row => row.id === item.recurring_item_id);
+    const message = template?.active
+      ? `Remover "${item.item_name}" somente deste mês? Use "⏸ Não repetir" na lista para encerrar a recorrência dos próximos meses.`
+      : `Remover "${item.item_name}" deste mês?`;
+    if (!window.confirm(message)) return;
+    const { error } = template
       ? await supabase.from('monthly_control_items')
         .update({ is_skipped: true })
         .eq('id', item.id)
@@ -3154,9 +3678,7 @@ if (!config?.url || !config?.publishableKey) {
       showToast('Não foi possível remover este item deste mês.');
       return;
     }
-    if (recurring) {
-      showToast('Item removido somente deste mês; a recorrência continua nos próximos.');
-    }
+    showToast(template ? 'Item removido somente deste mês.' : 'Item removido.');
     await refreshControlState();
   }
 
@@ -3164,22 +3686,21 @@ if (!config?.url || !config?.publishableKey) {
     const month = new Date(`${state.controlMonthKey}T12:00:00`);
     const previous = new Date(month.getFullYear(), month.getMonth() - 1, 1);
     const previousMonthStart = `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, '0')}-01`;
-    let templates = state.monthlyControlItems.filter(item => item.month_start === previousMonthStart);
+    let templates = state.monthlyControlItems.filter(item =>
+      item.month_start === previousMonthStart && !item.is_skipped && !item.recurring_item_id);
     if (!templates.length) {
       const monthNumber = month.getMonth() + 1;
       templates = state.recurringItems
-        .filter(item => item.frequency === 'monthly'
-          || (item.frequency === 'yearly' && item.month_of_year === monthNumber))
+        .filter(item => item.active
+          && (item.frequency === 'monthly'
+            || (item.frequency === 'yearly' && item.month_of_year === monthNumber)))
         .map(item => ({
           item_name: item.title,
           transaction_type: item.transaction_type,
           control_group: item.transaction_type === 'income'
             ? 'income'
             : item.budget_group === 'fixed' ? 'fixed'
-              : item.budget_group === 'emergency' ? 'additional' : 'variable',
-          income_behavior: item.transaction_type === 'income'
-            ? item.amount_behavior ?? 'fixed'
-            : null
+              : item.budget_group === 'emergency' ? 'additional' : 'variable'
         }));
     }
     const existingNames = new Set(state.monthlyControlItems
@@ -3194,9 +3715,7 @@ if (!config?.url || !config?.publishableKey) {
         transaction_type: item.transaction_type,
         control_group: item.control_group,
         amount_cents: null,
-        income_behavior: item.transaction_type === 'income'
-          ? item.income_behavior ?? 'variable'
-          : null,
+        income_behavior: null,
         created_by: state.user.id
       }));
     if (!rows.length) {
@@ -3262,7 +3781,12 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('insight-no-spend-note').textContent =
       insightsTransactions.length ? 'No mês selecionado' : 'Sem lançamentos';
 
+    const statementMonthKey = state.transactionsMonthKey ?? state.controlMonthKey?.slice(0, 7) ?? currentMonth;
+    const statementMonthDate = new Date(`${statementMonthKey.slice(0, 7)}-01T12:00:00`);
+    document.getElementById('transaction-month-label').textContent =
+      new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(statementMonthDate);
     const recentEntries = [...state.transactions, ...allCardStatementEntries()]
+      .filter(item => (item.display_date ?? item.transaction_date).startsWith(statementMonthKey.slice(0, 7)))
       .sort((a, b) => b.transaction_date.localeCompare(a.transaction_date));
     renderTransactions(document.getElementById('all-transactions'), recentEntries);
     updateCharts(insightsTransactions);
@@ -3423,7 +3947,7 @@ if (!config?.url || !config?.publishableKey) {
     if (!items.length) {
       const empty = document.createElement('div');
       empty.className = 'empty-state';
-      empty.textContent = 'Nenhuma movimentação cadastrada.';
+      empty.textContent = 'Nenhuma movimentação neste mês.';
       container.append(empty);
       return;
     }

@@ -2,7 +2,7 @@
 
 ## 1. Criar as tabelas e as políticas
 
-As cinco primeiras migrações abaixo já foram aplicadas ao projeto vinculado `Casa_em_dia`. A quinta cria o controle mensal simplificado e prepara os lançamentos existentes como itens mensais, sem apagar as tabelas originais. A sexta adiciona recorrências mensais e variáveis e o total declarado das faturas. A sétima separa receitas fixas e variáveis em cada mês; aplique-a antes de publicar a interface atualizada. Em qualquer projeto, abra **SQL Editor** e execute nesta ordem:
+As cinco primeiras migrações abaixo já foram aplicadas ao projeto vinculado `Casa_em_dia`. A quinta cria o controle mensal simplificado e prepara os lançamentos existentes como itens mensais, sem apagar as tabelas originais. A sexta adiciona recorrências mensais e variáveis e o total declarado das faturas. A sétima separa receitas fixas e variáveis em cada mês. A oitava impede modelos fixos duplicados. Aplique as duas últimas antes de publicar a interface atualizada. Em qualquer projeto, abra **SQL Editor** e execute nesta ordem:
 
 1. `migrations/20261018000000_household_finances.sql`
 2. `migrations/20261018160000_household_finance_model.sql`
@@ -11,8 +11,9 @@ As cinco primeiras migrações abaixo já foram aplicadas ao projeto vinculado `
 5. `migrations/20261018230000_monthly_control.sql`
 6. `migrations/20261023190000_recurring_monthly_statements.sql`
 7. `migrations/20261024120000_income_behavior.sql`
+8. `migrations/20261025120000_recurring_item_consistency.sql`
 
-A segunda migração adiciona categorias, metas, reserva, cartões, faturas e importação inicial protegida. A terceira corrige o identificador da importação inicial. A quarta permite cadastrar uma conta/cartão geral com fatura consolidada e guardar a identificação opcional de quem fez cada compra. A quinta cria os valores mensais por item e copia os lançamentos existentes para essa visão resumida; os registros originais permanecem intactos. A sexta materializa modelos fixos e variáveis no mês selecionado, preserva valores variáveis por mês e armazena o total da fatura separado das compras. A sétima grava em cada mês se a receita é fixa ou variável, inclusive para receitas avulsas. Todas as tabelas mantêm políticas RLS que isolam os dados por casa.
+A segunda migração adiciona categorias, metas, reserva, cartões, faturas e importação inicial protegida. A terceira corrige o identificador da importação inicial. A quarta permite cadastrar uma conta/cartão geral com fatura consolidada e guardar a identificação opcional de quem fez cada compra. A quinta cria os valores mensais por item e copia os lançamentos existentes para essa visão resumida; os registros originais permanecem intactos. A sexta materializa modelos fixos e variáveis no mês selecionado, preserva valores variáveis por mês e armazena o total da fatura separado das compras. A sétima grava em cada mês se a receita é fixa ou variável, inclusive para receitas avulsas. A oitava pausa modelos duplicados e cria um índice único para manter um único modelo ativo por nome, tipo e grupo. Todas as tabelas mantêm políticas RLS que isolam os dados por casa.
 
 ## 2. Preparar a primeira conta
 
