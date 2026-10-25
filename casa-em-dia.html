@@ -200,7 +200,7 @@
     .control-list { overflow: hidden; border-top: 1px solid var(--separator); }
     .control-row {
       display: grid; grid-template-columns: minmax(0, 1fr) minmax(96px, 132px) 88px;
-      align-items: start; gap: 8px; padding: 10px 10px 10px 14px;
+      align-items: center; gap: 8px; padding: 10px 10px 10px 14px;
       border-bottom: 1px solid var(--separator);
     }
     .control-row:last-child { border-bottom: 0; }
@@ -208,21 +208,26 @@
       display: flex; flex-direction: column; align-items: flex-start;
       min-width: 0;
     }
-    .control-row-name { min-width: 0; font-size: 14px; font-weight: 550; overflow-wrap: anywhere; }
-    .control-amount {
-      width: 100%; min-width: 0; padding: 9px 8px; border: 1px solid var(--separator);
-      border-radius: 9px; background: var(--bg-tertiary); color: var(--text);
-      text-align: right; font: inherit; font-size: 14px; font-variant-numeric: tabular-nums;
+    .control-row-name { min-width: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+    .control-row-value {
+      font-size: 14px; font-weight: 650; text-align: right;
+      font-variant-numeric: tabular-nums; align-self: center; overflow-wrap: anywhere;
     }
+    .control-row-value.pending { color: var(--accent); font-size: 12px; }
+    .control-row-adjust {
+      border: 1px solid var(--separator); background: var(--bg-tertiary); color: var(--accent);
+      font: inherit; font-size: 12px; font-weight: 650; border-radius: 9px;
+      padding: 9px 8px; cursor: pointer; white-space: nowrap;
+    }
+    .control-row-adjust:active { transform: scale(0.97); }
     .control-row-actions {
       display: flex; align-items: center; justify-content: flex-end;
       gap: 4px; min-height: 37px;
     }
     .control-row-actions button {
       border: 0; background: transparent; color: var(--text-tertiary);
-      border-radius: 8px; padding: 8px; font: inherit; cursor: pointer;
+      border-radius: 8px; padding: 4px; font: inherit; cursor: pointer;
     }
-    .control-row-actions .save { color: var(--accent); font-size: 12px; font-weight: 650; }
     .control-previous-amount {
       display: block; margin-top: 3px; color: var(--text-tertiary);
       font-size: 11px; line-height: 1.35;
@@ -418,6 +423,33 @@
     .sheet-title { font-size: 20px; font-weight: 700; text-align: center; flex: 1; }
     .sheet-close { border: none; border-radius: 10px; background: var(--bg-secondary); color: var(--text); font-size: 22px; width: 36px; height: 36px; line-height: 1; cursor: pointer; }
 
+    .item-dialog {
+      border: 0; padding: 0; background: transparent; color: var(--text);
+      width: min(420px, calc(100vw - 24px));
+      max-height: min(92vh, 680px);
+    }
+    .item-dialog::backdrop { background: rgba(0,0,0,0.45); }
+    .item-dialog-card {
+      background: var(--bg-elevated); border-radius: 18px;
+      padding: 18px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+      box-shadow: 0 24px 48px rgba(0,0,0,0.28);
+    }
+    .item-dialog-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+    .item-dialog-header h2 { font-size: 18px; font-weight: 700; }
+    .item-dialog-close {
+      border: 0; background: var(--bg-secondary); color: var(--text);
+      width: 34px; height: 34px; border-radius: 10px; font-size: 20px; line-height: 1; cursor: pointer;
+    }
+    .item-dialog .form-group { margin-bottom: 14px; }
+    .item-dialog .form-input { background: var(--bg-secondary); }
+    .item-dialog .amount-input-wrap input { padding-left: 40px; font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
+    .item-dialog .amount-input-wrap .currency { font-size: 16px; }
+    .item-dialog-actions { display: flex; gap: 10px; margin-top: 4px; }
+    .item-dialog-actions .secondary-btn,
+    .item-dialog-actions .primary-btn { flex: 1; margin: 0; }
+    .item-dialog .helper { margin-top: 10px; }
+    body.dialog-open { overflow: hidden; }
+
     .form-group { margin-bottom: 16px; }
     .form-label { display: block; font-size: 13px; font-weight: 500; color: var(--text-tertiary); margin-bottom: 6px; padding-left: 2px; }
     .form-input {
@@ -529,12 +561,6 @@
     .recurring-tag.paused { background: rgba(255,149,0,0.14); color: var(--orange); }
     .control-row-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 5px; }
     .control-row-tags .recurring-tag { margin-top: 0; }
-    .control-row-toggle {
-      border: 0; background: var(--accent-soft); color: var(--accent);
-      font: inherit; font-size: 11px; font-weight: 650; padding: 2px 7px;
-      border-radius: 6px; cursor: pointer; white-space: nowrap;
-    }
-    .control-row-toggle:hover { filter: brightness(0.96); }
     .control-card-item-actions .control-row-remove {
       border: 0; background: transparent; color: var(--text-tertiary);
       font: inherit; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px;
@@ -1450,6 +1476,40 @@
       <p class="helper" id="save-message"></p>
     </div>
   </div>
+
+  <dialog class="item-dialog" id="control-item-dialog" aria-labelledby="control-item-dialog-title">
+    <form class="item-dialog-card" id="control-item-form" novalidate>
+      <header class="item-dialog-header">
+        <h2 id="control-item-dialog-title">Ajustar item</h2>
+        <button class="item-dialog-close" type="button" data-close-dialog aria-label="Fechar">×</button>
+      </header>
+      <div class="form-group">
+        <label class="form-label" for="control-item-name-input">Nome</label>
+        <input class="form-input" id="control-item-name-input" maxlength="120" required placeholder="Ex.: Auxílio creche" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="control-item-amount-input">Valor do mês</label>
+        <div class="amount-input-wrap">
+          <span class="currency">R$</span>
+          <input class="form-input" id="control-item-amount-input" inputmode="decimal" placeholder="0,00" />
+        </div>
+      </div>
+      <div class="form-group">
+        <span class="form-label" id="control-item-behavior-label">Repetição</span>
+        <div class="freq-toggle" id="control-item-behavior" role="group" aria-labelledby="control-item-behavior-label">
+          <button class="freq-btn" type="button" data-behavior="once">Avulsa</button>
+          <button class="freq-btn" type="button" data-behavior="fixed">Fixa</button>
+          <button class="freq-btn" type="button" data-behavior="variable">Variável</button>
+        </div>
+        <p class="helper" id="control-item-behavior-note"></p>
+      </div>
+      <div class="item-dialog-actions">
+        <button class="secondary-btn" type="button" id="control-item-delete">Excluir</button>
+        <button class="primary-btn" type="submit" id="control-item-save">Salvar</button>
+      </div>
+      <p class="helper" id="control-item-dialog-message" role="status" aria-live="polite"></p>
+    </form>
+  </dialog>
 
   <script src="./supabase-config.js"></script>
   <script type="module" src="./app.js"></script>
