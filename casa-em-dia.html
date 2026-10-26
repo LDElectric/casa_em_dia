@@ -468,9 +468,14 @@
     .item-dialog .freq-btn { min-width: 0; }
     .item-dialog .amount-input-wrap input { padding-left: 40px; font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
     .item-dialog .amount-input-wrap .currency { font-size: 16px; }
-    .item-dialog-actions { display: flex; gap: 10px; margin-top: 4px; }
+    .item-dialog-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
     .item-dialog-actions .secondary-btn,
     .item-dialog-actions .primary-btn { flex: 1; margin: 0; }
+    .item-dialog-actions .danger-btn { color: var(--red); border-color: rgba(214,79,93,0.45); }
+    #control-item-delete-all { flex-basis: 100%; }
+    @media (max-width: 420px) {
+      #control-item-delete-all { flex-basis: 100%; }
+    }
     .item-dialog .helper { margin-top: 10px; }
     .card-group-actions { display: flex; justify-content: flex-end; margin: 0 12px 10px; }
     .card-add-button {
@@ -1271,7 +1276,7 @@
         <div class="section">
           <div class="section-title">Receitas que repetem todo mês</div>
           <div class="list" id="income-recurring-list"></div>
-          <p class="helper"><strong>Fixa</strong> = mesmo valor em todos os meses. <strong>Variável</strong> = o item repete, mas cada mês começa sem valor para você preencher. Parar a repetição remove os meses futuros e mantém o histórico; excluir apaga o modelo.</p>
+          <p class="helper"><strong>Fixa</strong> = mesmo valor em todos os meses. <strong>Variável</strong> = o item repete, mas cada mês começa sem valor para você preencher. Para tirar uma receita que não existe mais, use <strong>Excluir de todos os meses</strong>: ela sai deste mês em diante e o histórico anterior fica guardado.</p>
         </div>
 
         <div class="section">
@@ -1661,10 +1666,11 @@
         <p class="helper">Corrija aqui se a classificação automática não ficou certa.</p>
       </div>
       <div class="item-dialog-actions">
-        <button class="secondary-btn" type="button" id="control-item-stop-recurring" hidden>Parar de repetir</button>
+        <button class="secondary-btn danger-btn" type="button" id="control-item-delete-all" hidden>Excluir de todos os meses</button>
         <button class="secondary-btn" type="button" id="control-item-delete">Excluir</button>
         <button class="primary-btn" type="submit" id="control-item-save">Salvar</button>
       </div>
+      <p class="helper" id="control-item-delete-note" hidden></p>
       <p class="helper" id="control-item-dialog-message" role="status" aria-live="polite"></p>
     </form>
   </dialog>

@@ -53,8 +53,10 @@ São 4 toques no caminho feliz, contra 8 a 10 do fluxo anterior (que exigia ir a
 
 A aba **Receitas** (também acessível por *Ver e gerenciar todas as receitas*, dentro do grupo Receitas da aba Mês) mostra a renda da casa em três blocos:
 
-- **Receitas que repetem todo mês** — os modelos fixos e variáveis (salário, benefícios, freelance): valor, tipo, desde quando e quantos meses já foram gerados. Ações: **Salvar valor**, **Marcar como fixa/variável**, **Parar de repetir** (encerra a repetição e remove os meses futuros, mantendo o histórico) e **Excluir receita** (apaga o modelo);
-- **Receitas deste mês** — o que de fato entrou no mês selecionado, com **Ajustar** (valor, tipo e grupo), **Parar de repetir** e **Remover deste mês** (sai só deste mês). Se alguma receita foi removida do mês, o botão **Restaurar receitas removidas** reaparece;
+- **Receitas que repetem todo mês** — os modelos fixos e variáveis (salário, benefícios, freelance): valor, tipo, desde quando e quantos meses já foram gerados. Ações: **Salvar valor**, **Marcar como fixa/variável** e **Excluir de todos os meses** (apaga o modelo e os lançamentos deste mês em diante; o histórico anterior fica). Modelos antigos pausados mostram **Voltar a repetir**;
+- **Receitas deste mês** — o que de fato entrou no mês selecionado, com **Ajustar** (valor, tipo e grupo), **Remover deste mês** (sai só deste mês, a repetição continua) e **Excluir de todos os meses**. Se alguma receita foi removida do mês, o botão **Restaurar receitas removidas** reaparece;
+
+São só duas ações destrutivas em todo o app: **remover deste mês** (pontual) e **excluir de todos os meses** (definitivo a partir do mês atual). "Pausar repetição" foi removido por ser redundante com a exclusão.
 - **Adicionar receita** — nome, valor e **Repetir todo mês** marcado por padrão (desmarcado, vale só para o mês). Com "valor varia por mês", cada mês começa sem valor para você preencher.
 
 Correção de repetição: encerrar ou excluir uma receita fixa agora corta sempre a partir do **mês atual real** (não do mês que está sendo exibido) e limpa as linhas futuras que ficavam órfãs. Antes, ao excluir o modelo olhando um mês futuro, as linhas daquele mês sobreviviam sem vínculo e continuavam aparecendo em outros meses como "avulsas".
