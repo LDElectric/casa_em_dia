@@ -3876,6 +3876,14 @@ if (!config?.url || !config?.publishableKey) {
       : `Restaurar ${removedRows.length} itens removidos deste mês`;
   }
 
+  // Regra do resumo do mês (antes exibida em um info-box na tela Mês):
+  // o total soma o que precisa sair da receita — contas e gastos lançados + total das
+  // faturas do mês. A fatura entra por competência: vencimento até o dia 15 conta no mês
+  // anterior (ex.: vence 07/11 -> outubro), conforme getStatementReferenceMonth.
+  // As compras do cartão aparecem por categoria nos grupos e insights, mas não são
+  // somadas de novo ao caixa (calculateMonthlyCashFlow usa o total da fatura, e não a
+  // soma das compras). Lançamentos de pagamento de fatura no extrato ficam fora do
+  // resumo para não contar o mesmo dinheiro duas vezes.
   function renderMonthlySummary(monthKey) {
     const entries = financialEntriesForMonth(monthKey);
     const summary = calculateMonthlyCashFlow(
