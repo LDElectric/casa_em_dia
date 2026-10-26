@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
   calculateMonthlyCashFlow,
   classifyCardPurchase,
+  financialMonthKey,
   getStatementReferenceMonth,
   parseCardOfx,
   parseCardOfxPeriod,
@@ -59,6 +60,7 @@ const state = {
   completingPasswordSetup: false,
   sessionRefreshPromise: null,
   householdDataLoadedAt: 0,
+  householdCutoffDay: 1,
   insightsMonthIndex: 5
 };
 
@@ -150,8 +152,8 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('budget-target-form').addEventListener('submit', saveBudgetTarget);
     document.getElementById('budget-target-type').addEventListener('change', updateBudgetTargetCardField);
     document.getElementById('cancel-budget-target-edit').addEventListener('click', resetBudgetTargetForm);
-    document.getElementById('household-setup-import-form').addEventListener('submit', prepareHouseholdImport);
-    document.getElementById('confirm-household-import').addEventListener('click', confirmHouseholdImport);
+    document.getElementById('save-household-cutoff').addEventListener('click', saveHouseholdCutoff);
+    document.getElementById('household-setup-import-form').addEventListener('submit', prepareHouseholdImport);    document.getElementById('confirm-household-import').addEventListener('click', confirmHouseholdImport);
     document.getElementById('reserve-movement-form').addEventListener('submit', saveReserveMovement);
     document.getElementById('credit-card-form').addEventListener('submit', saveCreditCard);
     document.getElementById('cancel-credit-card-edit').addEventListener('click', resetCreditCardForm);
@@ -689,19 +691,41 @@ if (!config?.url || !config?.publishableKey) {
         .select('user_id, email, role')
         .eq('household_id', householdId)
         .order('created_at'),
-      supabase.from('transactions')
-        .select('id, created_by, title, transaction_type, category, subcategory, budget_group, payment_method, credit_card_id, amount_cents, transaction_date')
-        .eq('household_id', householdId)
-        .gte('transaction_date', localDate(sixMonthsAgo))
-        .order('transaction_date', { ascending: false }),
+      (async () => {
+        const columns = 'id, created_by, title, transaction_type, category, subcategory, budget_group, payment_method, credit_card_id, amount_cents, transaction_date';
+        const withCompetence = await supabase.from('transactions')
+          .select(`${columns}, competence_month`)
+          .eq('household_id', householdId)
+          .gte('transaction_date', localDate(sixMonthsAgo))
+          .order('transaction_date', { ascending: false });
+        if (!withCompetence.error) return withCompetence;
+        const fallback = await supabase.from('transactions')
+          .select(columns)
+          .eq('household_id', householdId)
+          .gte('transaction_date', localDate(sixMonthsAgo))
+          .order('transaction_date', { ascending: false });
+        return fallback.error
+          ? fallback
+          : { data: fallback.data.map(item => ({ ...item, competence_month: null })), error: null };
+      })(),
       supabase.from('recurring_items')
         .select('id, title, transaction_type, category, subcategory, budget_group, amount_cents, amount_behavior, frequency, day_of_month, month_of_year, starts_month, active')
         .eq('household_id', householdId)
         .order('title'),
-      supabase.from('households')
-        .select('name')
-        .eq('id', householdId)
-        .single(),
+      (async () => {
+        const withCutoff = await supabase.from('households')
+          .select('name, finance_month_cutoff_day')
+          .eq('id', householdId)
+          .single();
+        if (!withCutoff.error) return withCutoff;
+        const fallback = await supabase.from('households')
+          .select('name')
+          .eq('id', householdId)
+          .single();
+        return fallback.error
+          ? fallback
+          : { data: { ...fallback.data, finance_month_cutoff_day: 1 }, error: null };
+      })(),
       supabase.from('finance_categories')
         .select('id, transaction_type, category, subcategory, budget_group')
         .eq('household_id', householdId)
@@ -798,6 +822,7 @@ if (!config?.url || !config?.publishableKey) {
     state.cardStatements = statementsResult.data;
     state.cardStatementItems = statementItemsResult.data;
     state.monthlyControlItems = monthlyControlResult.data;
+    state.householdCutoffDay = Number(householdResult.data.finance_month_cutoff_day) || 1;
     if (ensureResult.error) {
       console.warn('Could not prepare recurring items for the selected month:', ensureResult.error.message);
     } else if (Number(ensureResult.data ?? 0) > 0) {
@@ -809,6 +834,10 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('control-household-subtitle').textContent =
       `${householdResult.data.name} · ${state.user.email ?? ''}`;
     document.getElementById('settings-household-name').textContent = householdResult.data.name;
+    const cutoffInput = document.getElementById('household-cutoff-day');
+    if (cutoffInput) cutoffInput.value = String(state.householdCutoffDay);
+    const cutoffCard = document.getElementById('household-cutoff-card');
+    if (cutoffCard) cutoffCard.hidden = state.membership.role !== 'owner';
     document.getElementById('settings-household-role').textContent =
       state.membership.role === 'owner' ? 'Responsável' : 'Membro';
     document.getElementById('household-member-count').textContent =
@@ -1054,8 +1083,15 @@ if (!config?.url || !config?.publishableKey) {
     return { id: data?.id ?? null, error, reused: false };
   }
 
-  function isMissingIncomeBehaviorError(error) {
+  function isMissingColumnError(error, column) {
     return Boolean(error) && (
+      error.code === '42703'
+      || error.code === 'PGRST204'
+      || String(error.message ?? '').includes(column)
+    );
+  }
+
+  function isMissingIncomeBehaviorError(error) {    return Boolean(error) && (
       error.code === '42703'
       || error.code === 'PGRST204'
       || error.message?.includes('income_behavior')
@@ -1463,6 +1499,7 @@ if (!config?.url || !config?.publishableKey) {
     for (const category of categories) select.add(new Option(category, category));
     select.value = categories.includes(current) ? current : '';
     renderSubcategoryOptions();
+    renderEntryCompetenceOptions();
   }
 
   function renderSubcategoryOptions() {
@@ -1515,6 +1552,57 @@ if (!config?.url || !config?.publishableKey) {
     renderSubcategoryOptions();
     document.getElementById('entry-subcategory').value = suggestion.subcategory;
     setDefaultBudgetGroup();
+  }
+
+  function renderEntryCompetenceOptions() {
+    const select = document.getElementById('entry-competence');
+    if (!select) return;
+    const current = select.value;
+    select.replaceChildren(new Option('Automático (virada do mês)', ''));
+    const base = state.controlMonthKey ? new Date(`${state.controlMonthKey}T12:00:00`) : new Date();
+    for (let offset = -2; offset <= 2; offset += 1) {
+      const date = new Date(base.getFullYear(), base.getMonth() + offset, 1);
+      const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+      const label = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(date);
+      select.add(new Option(label, value));
+    }
+    select.value = [...select.options].some(option => option.value === current) ? current : '';
+    const note = document.getElementById('entry-competence-note');
+    if (note) {
+      note.textContent = state.householdCutoffDay > 1
+        ? `Automático: lançamentos até o dia ${state.householdCutoffDay} do mês seguinte contam no mês anterior. Escolha um mês para contas pagas antecipadamente.`
+        : 'Automático usa o mês da data. Escolha um mês para contas pagas antecipadamente ou atrasadas.';
+    }
+  }
+
+  async function saveHouseholdCutoff() {
+    if (state.membership?.role !== 'owner') {
+      setMessage('household-cutoff-message', 'Somente o responsável pela casa pode mudar a virada do mês.');
+      return;
+    }
+    const day = Number(document.getElementById('household-cutoff-day').value);
+    if (!Number.isInteger(day) || day < 1 || day > 15) {
+      setMessage('household-cutoff-message', 'Escolha um dia entre 1 e 15.');
+      return;
+    }
+    const button = document.getElementById('save-household-cutoff');
+    button.disabled = true;
+    setMessage('household-cutoff-message', 'Salvando...');
+    const { error } = await supabase.from('households')
+      .update({ finance_month_cutoff_day: day })
+      .eq('id', state.membership.household_id);
+    button.disabled = false;
+    if (error) {
+      console.error('Could not save the financial month cutoff:', error.message);
+      setMessage('household-cutoff-message', 'Não foi possível salvar. Confirme se a migração do mês financeiro foi aplicada.');
+      return;
+    }
+    state.householdCutoffDay = day;
+    setMessage('household-cutoff-message', day === 1
+      ? 'Virada desligada: os lançamentos seguem o mês do calendário.'
+      : `Virada salva no dia ${day}. Lançamentos até ${day} do mês seguinte contam no mês anterior.`);
+    showToast(day === 1 ? 'Mês do calendário restaurado.' : `Virada do mês ajustada para o dia ${day}.`);
+    await loadHouseholdData();
   }
 
   function updatePaymentFields() {
@@ -3049,6 +3137,8 @@ if (!config?.url || !config?.publishableKey) {
       credit_card_id: creditCardId,
       amount_cents: variableAmount ? null : amount
     };
+    const competenceMonth = document.getElementById('entry-competence').value || null;
+    if (competenceMonth) payload.competence_month = competenceMonth;
     document.getElementById('save-transaction').disabled = true;
     document.getElementById('save-message').textContent = 'Salvando...';
 
@@ -3084,6 +3174,14 @@ if (!config?.url || !config?.publishableKey) {
           ...payload,
           transaction_date: transactionDate
         });
+      if (result.error && isMissingColumnError(result.error, 'competence_month')) {
+        const fallbackPayload = { ...payload };
+        delete fallbackPayload.competence_month;
+        result = await supabase.from('transactions').insert({
+          ...fallbackPayload,
+          transaction_date: transactionDate
+        });
+      }
     } else {
       const matchingTemplate = state.recurringItems.find(template =>
         template.transaction_type === transactionType
@@ -3623,8 +3721,9 @@ if (!config?.url || !config?.publishableKey) {
         const amount = document.createElement('strong');
         amount.textContent = formatMoney(statementTotal);
         const label = document.createElement('span');
+        const referenceMonth = getStatementReferenceMonth(cardStatements[0]);
         label.textContent = cardStatements.length === 1
-          ? `Vencimento ${formatDate(cardStatements[0].due_date)} · compras classificadas ${formatMoney(purchasesTotal)}`
+          ? `Fatura de ${formatMonthKey(referenceMonth)} · vence ${formatDate(cardStatements[0].due_date)} · compras classificadas ${formatMoney(purchasesTotal)}`
           : `${cardStatements.length} faturas neste mês · compras classificadas ${formatMoney(purchasesTotal)}`;
         statementInfo.append(amount, label);
         info.append(statementInfo);
@@ -4073,12 +4172,16 @@ if (!config?.url || !config?.publishableKey) {
   }
 
   async function fetchAllHouseholdTransactions() {
-    const { data, error } = await supabase.from('transactions')
-      .select('id, created_by, title, transaction_type, category, subcategory, budget_group, payment_method, credit_card_id, amount_cents, transaction_date, created_at')
+    const columns = 'id, created_by, title, transaction_type, category, subcategory, budget_group, payment_method, credit_card_id, amount_cents, transaction_date, created_at';
+    const attempt = select => supabase.from('transactions')
+      .select(select)
       .eq('household_id', state.membership.household_id)
       .order('transaction_date', { ascending: false });
-    if (error) throw error;
-    return data ?? [];
+    const withCompetence = await attempt(`${columns}, competence_month`);
+    if (!withCompetence.error) return withCompetence.data ?? [];
+    const fallback = await attempt(columns);
+    if (fallback.error) throw fallback.error;
+    return (fallback.data ?? []).map(item => ({ ...item, competence_month: null }));
   }
 
   async function exportHouseholdBackup() {
@@ -4341,6 +4444,23 @@ if (!config?.url || !config?.publishableKey) {
     return /^\s*pagamento(?:\s|$)/i.test(title);
   }
 
+  function formatMonthKey(monthKey) {
+    const [year, month] = String(monthKey ?? '').split('-').map(Number);
+    if (!year || !month) return String(monthKey ?? '');
+    return new Intl.DateTimeFormat('pt-BR', { month: 'short', year: 'numeric' })
+      .format(new Date(year, month - 1, 1));
+  }
+
+  function isCardPaymentTransaction(item) {
+    if (item.transaction_type !== 'expense') return false;
+    const title = String(item.title ?? '');
+    return /fatura/i.test(title) && /^\s*pagamento/i.test(title);
+  }
+
+  function entryFinancialMonthKey(item) {
+    return financialMonthKey(item.transaction_date, state.householdCutoffDay, item.competence_month ?? null);
+  }
+
   function financialEntriesForMonth(monthKey) {
     const monthlyItems = state.monthlyControlItems.filter(item =>
       item.month_start.startsWith(monthKey) && !item.is_skipped);
@@ -4370,7 +4490,8 @@ if (!config?.url || !config?.publishableKey) {
         };
       });
     const transactionEntries = state.transactions
-      .filter(item => item.transaction_date.startsWith(monthKey))
+      .filter(item => !isCardPaymentTransaction(item))
+      .filter(item => entryFinancialMonthKey(item) === monthKey)
       .filter(item => !representedTransactions.has(
         `${item.transaction_type}|${item.title.trim().toLocaleLowerCase('pt-BR')}`))
       .map(item => ({
@@ -4491,7 +4612,11 @@ if (!config?.url || !config?.publishableKey) {
       const dateLabel = formatDate(item.display_date ?? item.transaction_date);
       const cardLabel = item.card_label ? ` · ${item.card_label}` : '';
       const subcategory = item.subcategory ? ` · ${item.subcategory}` : '';
-      subtitle.textContent = `${dateLabel} · ${item.category ?? 'Sem categoria'}${subcategory}${cardLabel}`;
+      const competenceLabel = item.competence_month
+        ? ` · competência ${formatMonthKey(item.competence_month)}`
+        : '';
+      const cardPaymentLabel = isCardPaymentTransaction(item) ? ' · pagamento de fatura (fora do resumo)' : '';
+      subtitle.textContent = `${dateLabel} · ${item.category ?? 'Sem categoria'}${subcategory}${cardLabel}${competenceLabel}${cardPaymentLabel}`;
       info.append(title, subtitle);
       const avatar = document.createElement('div');
       avatar.className = 'transaction-avatar';

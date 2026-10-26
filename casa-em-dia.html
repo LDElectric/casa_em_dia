@@ -1157,7 +1157,7 @@
               <span class="free-badge" id="income-commitment-free">R$ 0,00 livre</span>
             </div>
           </div>
-          <div class="info-box">O resumo do mês soma o que precisa sair da receita: contas e gastos lançados + total das faturas com vencimento no mês. As compras do cartão aparecem por categoria nos grupos e insights para análise, mas não são somadas de novo ao caixa.</div>
+          <div class="info-box">O resumo do mês soma o que precisa sair da receita: contas e gastos lançados + total das faturas do mês. A fatura entra por competência — vencimento até o dia 15 conta no mês anterior (ex.: vence 07/11 → outubro). As compras do cartão aparecem por categoria nos grupos e insights, mas não são somadas de novo ao caixa.</div>
           <button class="secondary-btn control-copy-button" id="copy-control-items" type="button">Trazer os itens do mês anterior</button>
           <button class="secondary-btn control-copy-button" id="restore-removed-items" type="button" hidden>Restaurar itens removidos deste mês</button>
           <p class="helper" id="monthly-control-message" role="status" aria-live="polite"></p>
@@ -1296,7 +1296,7 @@
         </div>
         <div class="section" id="credit-card-section">
           <div class="section-title">Cartões e faturas</div>
-          <div class="info-box">Importe CSV, PDF com texto selecionável ou OFX. O total em aberto da fatura entra como despesa no mês do vencimento; cada compra pode ser classificada para grupos e insights sem duplicar essa saída.</div>
+          <div class="info-box">Importe CSV, PDF com texto selecionável ou OFX. O total da fatura entra no mês de competência (vencimento até o dia 15 cai no mês anterior) como despesa; cada compra é classificada para grupos e insights sem duplicar essa saída.</div>
           <form id="credit-card-form" class="card">
             <div class="form-group"><label class="form-label" for="card-label">Nome do cartão</label><input class="form-input" id="card-label" maxlength="80" placeholder="Ex.: Cartão da Maria / Cartão principal" required /></div>
             <div class="form-group"><label class="form-label" for="card-provider">Operadora ou banco (opcional)</label><input class="form-input" id="card-provider" maxlength="60" placeholder="Ex.: Visa, Mastercard, banco" /></div>
@@ -1322,6 +1322,16 @@
         <div class="section">
           <div class="settings-group">
             <div class="settings-item"><div class="left"><div class="icon-box" style="background:#007aff">🏠</div><span id="settings-household-name">Sua casa</span></div><span class="badge" id="settings-household-role">Membro</span></div>
+          </div>
+          <div class="section-title">Mês financeiro</div>
+          <div class="card backup-card" id="household-cutoff-card">
+            <div class="backup-title"><span aria-hidden="true">📅</span>Virada do mês</div>
+            <p class="helper">Com o salário caindo no 5º dia útil, o que entra até o dia escolhido do mês seguinte conta no mês anterior — a fatura já segue essa ideia (vencimento até o dia 15 cai no mês anterior). Use 1 para desligar e voltar ao mês do calendário.</p>
+            <div class="quick-add-row">
+              <input class="form-input" id="household-cutoff-day" type="number" min="1" max="15" inputmode="numeric" aria-label="Dia da virada do mês financeiro" />
+              <button class="secondary-btn" type="button" id="save-household-cutoff">Salvar</button>
+            </div>
+            <p class="helper" id="household-cutoff-message" role="status" aria-live="polite"></p>
           </div>
           <div class="section-title">Aparência</div>
           <div class="settings-group">
@@ -1518,7 +1528,12 @@
         <button class="link-button" type="button" id="entry-add-card">Cadastrar novo cartão</button>
       </div>
       <div class="form-group" id="group-card-tip" style="display:none">
-        <div class="info-box"><strong>Compra no crédito:</strong> categorize cada compra uma vez. O pagamento da fatura é marcado em Cartões e faturas e não entra como nova despesa.</div>
+        <div class="info-box"><strong>Compra no crédito:</strong> categorize cada compra uma vez. O total da fatura entra no mês de competência (vencimento até o dia 15 conta no mês anterior) e um lançamento “pagamento de fatura” no extrato não entra no resumo.</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="entry-competence">Mês de competência</label>
+        <select class="form-input" id="entry-competence"><option value="">Automático</option></select>
+        <span class="helper" id="entry-competence-note"></span>
       </div>
       <button class="primary-btn" type="button" id="save-transaction">Salvar</button>
       <p class="helper" id="save-message"></p>

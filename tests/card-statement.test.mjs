@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   calculateMonthlyCashFlow,
   classifyCardPurchase,
+  financialMonthKey,
+  getStatementReferenceMonth,
   parseCardOfx,
   parseCardOfxPeriod,
   parseCardOfxTotal,
@@ -227,4 +229,42 @@ test('reads the open statement total from the OFX ledger balance and period star
     totalCents: 382018
   });
   assert.equal(parseCardOfxTotal('<OFX></OFX>'), null);
+});
+
+test('financialMonthKey: virada 1 mantém o mês do calendário', () => {
+  assert.equal(financialMonthKey('2026-11-05', 1), '2026-11');
+  assert.equal(financialMonthKey('2026-11-05'), '2026-11');
+  assert.equal(financialMonthKey('2026-11-05', 0), '2026-11');
+});
+
+test('financialMonthKey: salário do 5º dia útil pertence ao mês anterior', () => {
+  assert.equal(financialMonthKey('2026-11-05', 6), '2026-10');
+  assert.equal(financialMonthKey('2026-11-06', 6), '2026-10');
+  assert.equal(financialMonthKey('2026-11-07', 6), '2026-11');
+  assert.equal(financialMonthKey('2026-11-09', 10), '2026-10');
+});
+
+test('financialMonthKey: virada funciona na virada do ano', () => {
+  assert.equal(financialMonthKey('2027-01-05', 6), '2026-12');
+  assert.equal(financialMonthKey('2027-01-20', 6), '2027-01');
+});
+
+test('financialMonthKey: competência manual vence a virada', () => {
+  assert.equal(financialMonthKey('2026-10-28', 6, '2026-11-01'), '2026-11');
+  assert.equal(financialMonthKey('2026-11-05', 6, '2026-11-01'), '2026-11');
+  assert.equal(financialMonthKey('2026-10-28', 6), '2026-10');
+});
+
+test('financialMonthKey: datas inválidas não quebram', () => {
+  assert.equal(financialMonthKey(null, 6), '');
+  assert.equal(financialMonthKey('2026-10', 6), '2026-10');
+  assert.equal(financialMonthKey('2026-10-31', 99), '2026-10');
+  assert.equal(financialMonthKey('2026-10-31', 'abc'), '2026-10');
+});
+
+test('getStatementReferenceMonth: fatura vencendo 07/11 é competência de outubro', () => {
+  assert.equal(getStatementReferenceMonth({ due_date: '2026-11-07' }), '2026-10');
+  assert.equal(getStatementReferenceMonth({ due_date: '2026-11-20' }), '2026-11');
+  assert.equal(getStatementReferenceMonth({ due_date: '2027-01-07' }), '2026-12');
+  assert.equal(getStatementReferenceMonth({ due_date: '2026-11-07', reference_month: '2026-09' }), '2026-09');
 });

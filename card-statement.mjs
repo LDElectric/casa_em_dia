@@ -95,6 +95,25 @@ export function getStatementReferenceMonth(statement) {
   return `${match[1]}-${match[2]}`;
 }
 
+/**
+ * Mês financeiro de um lançamento do extrato.
+ * Com a virada no dia N, o que acontece até o dia N do mês seguinte pertence ao
+ * mês anterior — é o caso do salário que cai no 5º dia útil pagando as contas do
+ * mês que acabou. Virada 1 desliga a regra (mês do calendário).
+ * Um `competence_month` explícito sempre vence, para contas pagas antecipadamente.
+ */
+export function financialMonthKey(dateString, cutoffDay = 1, competenceMonth = null) {
+  if (competenceMonth) return String(competenceMonth).slice(0, 7);
+  const match = String(dateString ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return String(dateString ?? '').slice(0, 7);
+  const cutoff = Number(cutoffDay);
+  if (!Number.isFinite(cutoff) || cutoff <= 1) return `${match[1]}-${match[2]}`;
+  const day = Number(match[3]);
+  if (day > Math.min(cutoff, 28)) return `${match[1]}-${match[2]}`;
+  const previous = new Date(Number(match[1]), Number(match[2]) - 2, 1);
+  return `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, '0')}`;
+}
+
 export function calculateMonthlyCashFlow(entries, statements, statementItems, monthKey) {
   const incomeEntries = entries
     .filter(item => item.transaction_type === 'income');

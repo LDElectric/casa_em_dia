@@ -8,8 +8,7 @@ O comando `npm run build` copia para `dist/` somente os arquivos públicos neces
 
 ## Publicar gratuitamente no Cloudflare Pages
 
-1. O projeto **Pages** `casa-em-dia` está publicado em [casa-em-dia-7l4.pages.dev](https://casa-em-dia-7l4.pages.dev/).
-2. Configure o comando de build como `npm run build` e o diretório de saída como `dist` caso conecte este projeto ao GitHub para deploy automático.
+1. O projeto **Pages** `casa-em-dia` está publicado em [casa-em-dia-7l4.pages.dev](https://casa-em-dia-7l4.pages.dev/).2. Configure o comando de build como `npm run build` e o diretório de saída como `dist` caso conecte este projeto ao GitHub para deploy automático.
 3. Cada push em `main` publica o app se o projeto Pages estiver conectado ao repositório. Para testar localmente, use `npm run pages:dev`; para publicar pela CLI, autentique o Wrangler com `npx wrangler login` e execute `npm run pages:deploy`.
 4. Configure a URL HTTPS do Pages e o domínio publicado em Supabase **Authentication → URL Configuration**.
 
@@ -49,6 +48,15 @@ O caminho curto para começar a usar cartão fica na própria tela **Mês**:
 4. escolha o arquivo → **Analisar fatura** → confira → **Salvar fatura**.
 
 São 4 toques no caminho feliz, contra 8 a 10 do fluxo anterior (que exigia ir a **Fixos**, preencher nome e operadora e depois voltar para importar). Quando a despesa é no cartão e nenhum cartão está cadastrado, a própria ficha de lançamento mostra **Cadastrar novo cartão**; o cartão criado já sai selecionado na despesa, sem perder o que foi digitado. O formulário completo (titular, limite, edição) continua em **Fixos → Cartões e faturas**, e a operadora passou a ser opcional nos dois caminhos.
+
+## Mês financeiro (virada e competência)
+
+O app separa **competência** (a que mês o dinheiro pertence) da **data do lançamento**:
+
+- **Faturas de cartão** entram pelo mês de competência: vencimento até o dia 15 conta no mês anterior (07/11 → outubro);
+- **Virada do mês financeiro** em **Ajustes → Mês financeiro**, exclusiva do responsável: com a virada no dia N, lançamentos do extrato datados até o dia N do mês seguinte contam no mês anterior. É o caso do salário que cai no 5º dia útil e paga as contas do mês que acabou. O valor **1 desliga** a regra e volta ao mês do calendário;
+- **Mês de competência** na ficha de lançamento: escolha um mês específico para contas pagas antecipadamente ou atrasadas. O apontamento manual vence a virada;
+- **Pagamento de fatura** lançado no extrato (título começando por "Pagamento" e contendo "fatura") **não entra no resumo**: o total da fatura já é contado no mês de competência, então somar o pagamento contaria o mesmo dinheiro duas vezes. O lançamento continua no Extrato, marcado como *fora do resumo*.
 
 ## Duplicidade de lançamentos
 
