@@ -60,10 +60,11 @@ O app separa **competência** (a que mês o dinheiro pertence) da **data do lan�
 
 ## Categorização das compras do cartão
 
-Cada compra da fatura é classificada pelo **contexto do estabelecimento**, não só pelo total da fatura: farmácia, padaria, mercado, açougue, feira, oficina, combustível, streaming, delivery, petshop, transporte e compras em geral. A classificação usa a categoria/subcategoria da casa quando ela existe e, quando não existe, mantém o nome do contexto (ex.: *Alimentação · Mercado*) com o grupo de orçamento sugerido.
+Cada compra da fatura é classificada pelo **texto da linha** (nome do estabelecimento e, quando existe, o complemento/memo), não pelo valor nem pelo total da fatura: farmácia, padaria, mercado, açougue, feira, oficina, combustível, streaming, delivery, petshop, transporte e compras em geral. O texto é normalizado (minúsculas, sem acentos) e comparado com radicais, então *Redepharma*, *Farma Central* e *Pharma Vita* caem em **Saúde · Farmácia**, e *Padaria*, *Panificadora* e *Padoca* em **Alimentação · Padaria**. Palavras curtas e ambíguas exigem palavra inteira, para *Cobrança* não virar imprevisto e *Mercado Livre* não virar mercado de bairro (marketplaces como Amazon, Shopee, Magalu e Mercado Livre entram em **Outros · Compras online**). A classificação usa a categoria/subcategoria da casa quando ela existe e, quando não existe, mantém o nome do contexto (ex.: *Alimentação · Mercado*) com o grupo de orçamento sugerido.
 
 - Nenhuma compra fica com categoria vazia: sem correspondência, entra em **Outros** e a prévia da importação marca *Sem correspondência — usando Outros* para revisão;
-- Na prévia de importação é possível ajustar categoria, subcategoria e grupo de cada linha antes de salvar;
+- Na prévia de importação é possível ajustar categoria, subcategoria e grupo de cada linha antes de salvar; o que você classificar passa a valer como **padrão da casa** para o mesmo estabelecimento nas próximas faturas;
+- A prévia mostra a origem da sugestão: *Sugestão pelo nome do estabelecimento*, *Padrão já usado nesta casa* (aprendido), *Sem correspondência — usando Outros* (precisa de revisão) ou *Classificação salva* (reimportação);
 - Faturas importadas antes desta classificação são reclassificadas automaticamente ao abrir o app (apenas linhas sem categoria e nunca pagamentos de fatura);
 - **Insights** mostra dois níveis: o KPI **Compras no cartão** (total comprado no mês de competência, incluindo parcelas) e o cartão **Cartão por categoria**, com valor e participação de cada contexto. O gráfico **Gastos por categoria** soma despesas do mês e compras do cartão, sem repetir o total da fatura no caixa.
 

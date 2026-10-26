@@ -1,33 +1,49 @@
 /**
- * Contextos que aparecem nas faturas de cartão (padaria, mercado, açougue,
- * farmácia, oficina, streaming…). A primeira regra que casa vence, então as
- * mais específicas ficam primeiro. `group` é o plano B de classificação quando
- * a casa ainda não cadastrou a categoria/subcategoria correspondente.
+ * Classificação baseada na DESCRIÇÃO de cada linha da fatura (o nome do
+ * estabelecimento, com o complemento/memo quando existe). O texto é
+ * normalizado (minúsculas e sem acentos) e comparado com estes contextos.
+ *
+ * Regras:
+ * - a primeira regra que casar vence, por isso as mais específicas vêm antes;
+ * - radicais como `farma`, `pharma`, `padari` e `panific` casam dentro da
+ *   palavra, então "Redepharma", "Farma Central" e "Panificadora Estrela"
+ *   entram na categoria certa;
+ * - palavras curtas e ambíguas (posto, obra, café, pneu) exigem palavra
+ *   inteira para não classificar "cobrança" como imprevisto;
+ * - `group` é o plano B quando a casa ainda não cadastrou a subcategoria.
+ *
+ * Nada aqui adivinha o ramo pelo valor: é sempre o texto do lançamento.
  */
 const MERCHANT_RULES = [
-  { match: /\b(netflix|spotify|disney|hbo|prime video|paramount|apple tv|globoplay|deezer|youtube|crunchyroll|chatgpt|openai|icloud|google one|adobe|microsoft 365|office 365|canva|duolingo)\b/, category: 'Assinaturas', subcategory: 'Streaming', group: 'fixed' },
+  { match: /\b(netflix|spotify|disney|hbo|prime video|paramount|apple tv|globoplay|deezer|youtube|crunchyroll|chatgpt|openai|icloud|adobe|microsoft 365|office 365|canva|duolingo)\b|amazon ?prime|primebr|google (one|play|cloud|workspace|ai|gemini)|google one|google play|google ?g1|gemini/, category: 'Assinaturas', subcategory: 'Streaming', group: 'fixed' },
+  // Marketplaces e lojas online não são mercado de bairro.
+  { match: /mercado ?livre|mercadolivre|mercado ?pago|mercadopago|shopee|aliexpress|shein|temu|amazon ?mktplc|amazon marketplace|\bamazon\b|\bamzn\b|magalu|magazine luiza|americanas|submarino|netshoes|centauro|decathlon|\brenner\b|riachuelo|\bzara\b|\bcea\b|\bmarisa\b|casas bahia|pontofrio|fast shop/, category: 'Outros', subcategory: 'Compras online', group: 'variable' },
   { match: /\b(banda larga|fibra|vivo fibra|claro net|oi fibra|algar|internet)\b/, category: 'Serviços', subcategory: 'Internet', group: 'fixed' },
   { match: /\b(recarga|recarregue|tim|vivo|claro|nextel)\b/, category: 'Comunicação', subcategory: 'Recarga de celular', group: 'fixed' },
-  { match: /\b(sabesp|copasa|sanepar|cedae|embasa|cagece|saneamento|conta de agua|aguas)\b/, category: 'Moradia', subcategory: 'Conta de água', group: 'fixed' },
-  { match: /\b(enel|cpfl|cemig|equatorial|coelba|celpe|energisa|energia eletrica|conta de luz)\b/, category: 'Moradia', subcategory: 'Conta de energia', group: 'fixed' },
+  { match: /sabesp|copasa|sanepar|cedae|embasa|cagece|saneament|conta de agua|\baguas\b/, category: 'Moradia', subcategory: 'Conta de água', group: 'fixed' },
+  { match: /enel|cpfl|cemig|equatorial|coelba|celpe|energisa|energia eletrica|conta de luz/, category: 'Moradia', subcategory: 'Conta de energia', group: 'fixed' },
   { match: /\b(comgas|gas encanado|gas natural)\b/, category: 'Moradia', subcategory: null, group: 'fixed' },
   { match: /\b(aluguel|condominio|iptu|imobiliaria)\b/, category: 'Moradia', subcategory: null, group: 'fixed' },
-  { match: /\b(farmacia|farmacias|drogaria|drogarias|drogasil|droga raia|droga sao paulo|pacheco|pague menos|ultrafarma|nissei|panvel)\b/, category: 'Saúde', subcategory: 'Farmácia', group: 'variable' },
-  { match: /\b(clinica|laboratorio|diagnostico|exame|exames|consulta|dentista|odonto|medico|medicos|hospital|fisioterapia|psicolog|terapia)\b/, category: 'Saúde', subcategory: 'Consultas', group: 'variable' },
-  { match: /\b(padaria|panificadora|panificacao|padoca|confeitaria|pao de mel|pao quente|doceria|bolos)\b/, category: 'Alimentação', subcategory: 'Padaria', group: 'variable' },
-  { match: /\b(acougue|frigorifico|peixaria|pescados|casa de carnes|carnes|suinos|bovinos|aves)\b/, category: 'Alimentação', subcategory: 'Açougue', group: 'variable' },
-  { match: /\b(hortifruti|hortifrutigranjeiro|sacolao|quitanda|feira|horta|frutas|verduras|legumes)\b/, category: 'Alimentação', subcategory: 'Feira', group: 'variable' },
-  { match: /\b(mercado|supermercado|hipermercado|minimercado|atacadao|assai|carrefour|extra|pao de acucar|guanabara|prezunic|zona sul|mambo|sonda|bistek|angeloni|condor|makro|sam s club|walmart|bretas|supermercados)\b/, category: 'Alimentação', subcategory: 'Mercado', group: 'variable' },
-  { match: /\b(ifood|rappi|uber eats|delivery|restaurante|lanchonete|pizzaria|hamburguer|burger|mcdonald|subway|habibs|giraffas|outback|sushi|churrascaria|cafeteria|cafe|sorveteria|acai)\b/, category: 'Lazer', subcategory: 'Lanches', group: 'leisure' },
-  { match: /\b(academia|smart fit|bluefit|selfit|pilates|crossfit|personal trainer)\b/, category: 'Saúde', subcategory: null, group: 'fixed' },
-  { match: /\b(posto|combustivel|gasolina|etanol|alcool|diesel|shell|ipiranga|petrobras|bandeirante|auto posto)\b/, category: 'Transporte', subcategory: 'Combustível', group: 'variable' },
-  { match: /\b(oficina|auto center|autocenter|mecanica|borracharia|pneu|pneus|alinhamento|balanceamento|revisao|concessionaria|auto pecas|autopecas|retifica|lubrificantes|oleo)\b/, category: 'Transporte', subcategory: 'Oficina', group: 'variable' },
-  { match: /\b(uber|99app|99 pop|cabify|taxi|onibus|metro|bilhete unico|pedagio|estacionamento|sem parar|veloe|conectcar)\b/, category: 'Transporte', subcategory: null, group: 'variable' },
-  { match: /\b(creche|bercario|escola|colegio|educacao infantil|maternal)\b/, category: 'Família e educação', subcategory: 'Creche', group: 'fixed' },
-  { match: /\b(faculdade|universidade|unip|estacio|anhanguera|uninove|unicesumar|graduacao|pos graduacao)\b/, category: 'Família e educação', subcategory: 'Faculdade', group: 'fixed' },
+  // Rede de supermercado é decidida antes da farmácia: "Supermercado Pague Menos" é mercado.
+  { match: /supermerc|hipermerc|minimerc|atacad|\bvarejao|assai|carrefour|guanabara|prezunic|zona sul|mamboo|sonda|bistek|angeloni|condor|makro|sam ?s club|walmart|bretas|pao de acucar/, category: 'Alimentação', subcategory: 'Mercado', group: 'variable' },
+  { match: /farma|pharma|drogari|drogasil|droga raia|droga sao paulo|pacheco|pague menos|nissei|panvel/, category: 'Saúde', subcategory: 'Farmácia', group: 'variable' },
+  { match: /clinic|laborator|diagnostic|\bexame|consulta|dentist|odonto|medic|hospital|fisioterap|psicolog|terapia/, category: 'Saúde', subcategory: 'Consultas', group: 'variable' },
+  { match: /academia|smart ?fit|bluefit|selfit|\bmfit\b|pilates|crossfit|personal trainer|wellhub|gympass|totalpass|queima diaria/, category: 'Saúde', subcategory: null, group: 'fixed' },
+  { match: /padari|panific|padoca|confeitar|pao de mel|pao quente|doceria|\bbolos\b/, category: 'Alimentação', subcategory: 'Padaria', group: 'variable' },
+  { match: /acoug|frigorific|peixari|pescad|casa de carn|\bcarnes\b|suino|bovino/, category: 'Alimentação', subcategory: 'Açougue', group: 'variable' },
+  { match: /hortifrut|sacolao|quitanda|\bfeira\b|\bhorta\b|frutas|verduras|legumes/, category: 'Alimentação', subcategory: 'Feira', group: 'variable' },
+  { match: /mercado|mercadinho|\bextra\b/, category: 'Alimentação', subcategory: 'Mercado', group: 'variable' },
+  { match: /ifood|rappi|uber ?eats|delivery|restaurant|lanchonet|pizzari|\bpizza|hamburguer|hamburgu|burger|burguer|mcdonald|subway|habibs|giraffas|outback|sushi|churrascar|cafeteria|\bcafe\b|sorveter|acai|tapio|pastel|esfiha|marmita|\blanche\b|salgado|hot ?dog/, category: 'Lazer', subcategory: 'Lanches', group: 'leisure' },
+  { match: /(^| )posto|combustiv|gasolina|etanol|alcool|diesel|shell|ipiranga|petrobras|bandeirante/, category: 'Transporte', subcategory: 'Combustível', group: 'variable' },
+  { match: /\bmotos?\b|motocicleta|motopecas|moto ?pecas/, category: 'Transporte', subcategory: 'Peças de moto', group: 'variable' },
+  { match: /oficin|auto ?center|autocenter|mecanic|borrachar|\bpneus?\b|alinhament|balanceament|\brevisa|concessionari|auto ?pecas|autopecas|retific|lubrificant|\boleo\b/, category: 'Transporte', subcategory: 'Oficina', group: 'variable' },
+  { match: /uber ?rides|uber ?trip|uber ?do ?brasil|\buber\b|99 ?(app|pop|food|taxi)|cabify|\btaxi|onibus|\bmetro\b|bilhete unico|pedagio|estacionament|sem parar|veloe|conectcar/, category: 'Transporte', subcategory: null, group: 'variable' },
+  { match: /creche|bercario|escola|colegio|educacao infantil|maternal/, category: 'Família e educação', subcategory: 'Creche', group: 'fixed' },
+  { match: /faculdade|universidade|\bunip\b|estacio|anhanguera|uninove|unicesumar|graduacao|pos graduacao/, category: 'Família e educação', subcategory: 'Faculdade', group: 'fixed' },
   { match: /\b(curso|cursos|idiomas|ingles|espanhol|alura|udemy|coursera|hotmart)\b/, category: 'Família e educação', subcategory: null, group: 'variable' },
-  { match: /\b(petshop|pet shop|petz|cobasi|veterinario|veterinaria|banho e tosa|racao)\b/, category: 'Pets', subcategory: null, group: 'variable' },
-  { match: /\b(cinema|cinemark|cinepolis|teatro|show|ingresso|museu|parque|zoologico|playstation|xbox|steam)\b/, category: 'Lazer', subcategory: 'Passeios', group: 'leisure' },
+  { match: /petshop|pet shop|petz|cobasi|veterinari|banho e tosa|racao/, category: 'Pets', subcategory: null, group: 'variable' },
+  { match: /cinema|cinemark|cinepolis|teatro|\bshow\b|ingresso|museu|parque|zoologic|playstation|xbox|\bsteam\b|hotel|pousada|resort|airbnb|booking|passagem aerea|latam|gol linhas|azul linhas/, category: 'Lazer', subcategory: 'Passeios', group: 'leisure' },
+  { match: /madeireir|ferragem|material de construc|leroy merlin|construshow|cassol/, category: 'Outros', subcategory: null, group: 'variable' },
   { match: /\b(conserto|reparo|manutencao|reforma|obra|encanador|eletricista|chaveiro|dedetizadora|vidraceiro|serralheria)\b/, category: 'Outros', subcategory: null, group: 'emergency' }
 ];
 

@@ -876,13 +876,23 @@ if (!config?.url || !config?.publishableKey) {
     const householdId = state.membership?.household_id;
     if (!householdId || cardCategoryBackfillHousehold === householdId) return;
     cardCategoryBackfillHousehold = householdId;
-    const pendingItems = state.cardStatementItems.filter(item =>
-      !cleanCategoryText(item.category) && !isCardPayment(item.title));
+    const pendingItems = state.cardStatementItems.filter(item => {
+      if (isCardPayment(item.title)) return false;
+      const category = cleanCategoryText(item.category);
+      const subcategory = cleanCategoryText(item.subcategory);
+      // Reclassifica linhas vazias e o fallback antigo "Outros" sem subcategoria,
+      // para aproveitar melhorias nas regras sem tocar em escolha do usuário.
+      return !category || (normalizeText(category) === 'outros' && !subcategory);
+    });
     if (!pendingItems.length) return;
 
+    const merchantHistory = cardMerchantHistory();
     const groups = new Map();
     for (const item of pendingItems) {
-      const suggestion = classifyCardPurchase(item.title, state.financeCategories);
+      const suggestion = classifyCardEntry(item.title, merchantHistory);
+      // Só grava quando há contexto reconhecido; sem correspondência fica
+      // "Sem categoria" para o usuário decidir (e ensinar o app).
+      if (!suggestion.matched) continue;
       const key = `${suggestion.category}|${suggestion.subcategory ?? ''}|${suggestion.budget_group}`;
       const group = groups.get(key) ?? { ...suggestion, ids: [] };
       group.ids.push(item.id);
@@ -2593,6 +2603,7 @@ if (!config?.url || !config?.publishableKey) {
           : null)
         ?? ofxTotal
         ?? fallbackTotal;
+      const merchantHistory = cardMerchantHistory();
       state.pendingCardImport = {
         creditCardId,
         dueDate,
@@ -2604,14 +2615,14 @@ if (!config?.url || !config?.publishableKey) {
         rows: rowsWithKeys.map(row => {
           const existingItem = categoryBySource.get(row.source_key);
           const savedItem = existingItem && cleanCategoryText(existingItem.category) ? existingItem : null;
-          const automaticClassification = savedItem
-            ? null
-            : classifyCardPurchase(row.title, state.financeCategories);
+          const automaticClassification = savedItem ? null : classifyCardEntry(row.title, merchantHistory);
           return {
             ...row,
             classification_source: savedItem
               ? 'saved'
-              : automaticClassification.matched ? 'automatic' : 'guess',
+              : automaticClassification.source === 'history'
+                ? 'learned'
+                : automaticClassification.matched ? 'automatic' : 'guess',
             cardholder_label: row.cardholder_label || existingItem?.cardholder_label || null,
             ...(automaticClassification && {
               category: automaticClassification.category,
@@ -2896,11 +2907,13 @@ if (!config?.url || !config?.publishableKey) {
       classification.className = item.category ? 'statement-classification' : 'statement-classification needs-review';
       classification.textContent = !cleanCategoryText(item.category)
         ? 'Revisar categoria'
-        : item.classification_source === 'automatic'
-          ? 'Sugestão automática — confira'
-          : item.classification_source === 'guess'
-            ? 'Sem correspondência — usando Outros'
-            : item.classification_source === 'saved' ? 'Classificação salva' : 'Classificada';
+        : item.classification_source === 'learned'
+          ? 'Padrão já usado nesta casa — confira'
+          : item.classification_source === 'automatic'
+            ? 'Sugestão pelo nome do estabelecimento — confira'
+            : item.classification_source === 'guess'
+              ? 'Sem correspondência — usando Outros'
+              : item.classification_source === 'saved' ? 'Classificação salva' : 'Classificada';
       const group = document.createElement('select');
       group.className = 'form-input';
       for (const [value, label] of [
@@ -4584,7 +4597,10 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('insight-no-spend-note').textContent =
       insightsTransactions.length ? 'No mês selecionado' : 'Sem lançamentos';
 
-    const cardEntries = insightsTransactions.filter(item => item.source_item_id && !item.is_forecast);
+    // Estornos e créditos da fatura não são compras: entram no total da fatura,
+    // mas não no detalhamento por categoria.
+    const cardEntries = insightsTransactions.filter(item =>
+      item.source_item_id && !item.is_forecast && Number(item.amount_cents) > 0);
     const cardEntriesTotal = cardEntries.reduce((sum, item) => sum + Number(item.amount_cents), 0);
     const cardCategories = cardCategoryTotals(cardEntries);
     const cardTotalElement = document.getElementById('insight-card-total');
@@ -4939,7 +4955,7 @@ if (!config?.url || !config?.publishableKey) {
     });
     const categories = new Map();
     for (const item of currentTransactions) {
-      if (item.transaction_type !== 'expense') continue;
+      if (item.transaction_type !== 'expense' || Number(item.amount_cents) <= 0) continue;
       const label = categoryLabelFor(item);
       categories.set(label, (categories.get(label) ?? 0) + Number(item.amount_cents) / 100);
     }
@@ -5037,6 +5053,36 @@ if (!config?.url || !config?.publishableKey) {
 
   function categoryLabelFor(item) {
     return cleanCategoryText(item?.category) || cleanCategoryText(item?.subcategory) || 'Sem categoria';
+  }
+
+  /**
+   * Aprende com o que já foi classificado na casa: o mesmo estabelecimento
+   * mantém a categoria que o usuário confirmou, mesmo que a regra por nome
+   * sugira outra coisa.
+   */
+  function cardMerchantHistory() {
+    const history = new Map();
+    for (const item of state.cardStatementItems) {
+      const category = cleanCategoryText(item.category);
+      const subcategory = cleanCategoryText(item.subcategory);
+      if (!category || isCardPayment(item.title)) continue;
+      // "Outros" sem subcategoria costuma ser palpite antigo, não uma escolha.
+      if (normalizeText(category) === 'outros' && !subcategory) continue;
+      const key = normalizeText(item.title);
+      if (!key || history.has(key)) continue;
+      history.set(key, {
+        category,
+        subcategory: cleanCategoryText(item.subcategory) || null,
+        budget_group: item.budget_group ?? 'variable'
+      });
+    }
+    return history;
+  }
+
+  function classifyCardEntry(title, history) {
+    const learned = history?.get(normalizeText(title));
+    if (learned) return { ...learned, matched: true, source: 'history' };
+    return { ...classifyCardPurchase(title, state.financeCategories), source: 'rules' };
   }
 
   function localDate(date) {

@@ -56,6 +56,38 @@ test('covers supermarket, butcher, workshop and streaming contexts', () => {
   });
 });
 
+test('recognizes merchant stems such as Redepharma, Farma and Panificadora', () => {
+  assert.equal(classifyCardPurchase('REDEPHARMA', [])?.subcategory, 'Farmácia');
+  assert.equal(classifyCardPurchase('FARMA CENTRAL', [])?.subcategory, 'Farmácia');
+  assert.equal(classifyCardPurchase('PHARMA VITA', [])?.subcategory, 'Farmácia');
+  assert.equal(classifyCardPurchase('DROGARIA SAO PAULO', [])?.subcategory, 'Farmácia');
+  assert.equal(classifyCardPurchase('PANIFICADORA ESTRELA', [])?.subcategory, 'Padaria');
+  assert.equal(classifyCardPurchase('ACOUGUE DO ZE', [])?.subcategory, 'Açougue');
+});
+
+test('classifies real statement descriptors (Nubank style)', () => {
+  assert.equal(classifyCardPurchase('Wellhub Felipe Dias', [])?.category, 'Saúde');
+  assert.equal(classifyCardPurchase('Amazonprimebr', [])?.category, 'Assinaturas');
+  assert.equal(classifyCardPurchase('Amazonmktplc*Centerspo', [])?.category, 'Outros');
+  assert.equal(classifyCardPurchase('Dl *Uberrides', [])?.category, 'Transporte');
+  assert.equal(classifyCardPurchase('Casa de Carnes Sudoest', [])?.subcategory, 'Açougue');
+  assert.equal(classifyCardPurchase('Portal Motos', [])?.subcategory, 'Peças de moto');
+  assert.equal(classifyCardPurchase('Torres Pizza', [])?.subcategory, 'Lanches');
+});
+
+test('avoids false positives on marketplaces and bank fee descriptions', () => {
+  assert.deepEqual(classifyCardPurchase('MERCADO LIVRE', []), {
+    category: 'Outros',
+    subcategory: 'Compras online',
+    budget_group: 'variable',
+    matched: true
+  });
+  assert.equal(classifyCardPurchase('MERCADO PAGO', [])?.category, 'Outros');
+  assert.equal(classifyCardPurchase('SUPERMERCADO PAGUE MENOS', [])?.subcategory, 'Mercado');
+  assert.equal(classifyCardPurchase('COBRANCA TARIFA', [])?.matched, false);
+  assert.equal(classifyCardPurchase('PREVISAO PAGAMENTO', [])?.matched, false);
+});
+
 test('falls back to Outros when the household has no matching categories', () => {
   assert.deepEqual(classifyCardPurchase('PADARIA PÃO QUENTE', []), {
     category: 'Alimentação',
