@@ -8,6 +8,7 @@ const publishFiles = [
   'casa-em-dia.html',
   'app.js',
   'card-statement.mjs',
+  'card-merchant-rules.mjs',
   'smart-classify.mjs',
   'backup.mjs',
   'supabase-config.js',

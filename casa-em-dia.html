@@ -414,6 +414,7 @@
     .card-category-list .progress-header { gap: 12px; }
     .card-category-list .progress-header .name { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .card-category-list .progress-header .values { white-space: nowrap; }
+    #card-category-pending { text-align: left; margin-top: 10px; line-height: 1.45; }
 
     .screen { display: none; height: 100%; flex-direction: column; overflow: hidden; }
     .screen.active { display: flex; }
@@ -1266,6 +1267,7 @@
           <div class="chart-card full">
             <div class="chart-header"><div class="chart-title">Cartão por categoria</div><div class="chart-legend" id="card-category-summary">Sem compras importadas</div></div>
             <div class="card-category-list" id="card-category-list"><div class="empty-state">Importe a fatura do cartão para ver o detalhamento por categoria.</div></div>
+            <p class="helper" id="card-category-pending" hidden></p>
           </div>
           <div class="chart-card full">
             <div class="chart-header"><div class="chart-title">Evolução do saldo (6 meses)</div></div>

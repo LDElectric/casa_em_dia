@@ -2,7 +2,7 @@
 
 ## 1. Criar as tabelas e as políticas
 
-As dez migrações abaixo estão aplicadas ao projeto vinculado `Casa_em_dia`. A quinta cria o controle mensal simplificado e prepara os lançamentos existentes como itens mensais, sem apagar as tabelas originais. A sexta adiciona recorrências mensais e variáveis e o total declarado das faturas. A sétima separa receitas fixas e variáveis em cada mês. A oitava impede modelos fixos duplicados. A nona define o mês financeiro (virada do mês e competência manual). A décima adiciona as categorias de contexto usadas na classificação das faturas (Mercado, Açougue e Oficina). Em qualquer projeto novo, abra **SQL Editor** e execute nesta ordem:
+As onze migrações abaixo estão aplicadas ao projeto vinculado `Casa_em_dia`. A quinta cria o controle mensal simplificado e prepara os lançamentos existentes como itens mensais, sem apagar as tabelas originais. A sexta adiciona recorrências mensais e variáveis e o total declarado das faturas. A sétima separa receitas fixas e variáveis em cada mês. A oitava impede modelos fixos duplicados. A nona define o mês financeiro (virada do mês e competência manual). A décima adiciona as categorias de contexto usadas na classificação das faturas (Mercado, Açougue e Oficina). A décima primeira cria o dicionário de estabelecimentos da casa (`card_merchant_rules`), que guarda a categoria confirmada pelo usuário para cada nome de estabelecimento e vence as regras automáticas do app. Em qualquer projeto novo, abra **SQL Editor** e execute nesta ordem:
 
 1. `migrations/20261018000000_household_finances.sql`
 2. `migrations/20261018160000_household_finance_model.sql`
@@ -14,6 +14,7 @@ As dez migrações abaixo estão aplicadas ao projeto vinculado `Casa_em_dia`. A
 8. `migrations/20261025120000_recurring_item_consistency.sql`
 9. `migrations/20261026120000_financial_month.sql`
 10. `migrations/20261027120000_card_merchant_categories.sql`
+11. `migrations/20261027190000_card_merchant_rules.sql`
 
 A segunda migração adiciona categorias, metas, reserva, cartões, faturas e importação inicial protegida. A terceira corrige o identificador da importação inicial. A quarta permite cadastrar uma conta/cartão geral com fatura consolidada e guardar a identificação opcional de quem fez cada compra. A quinta cria os valores mensais por item e copia os lançamentos existentes para essa visão resumida; os registros originais permanecem intactos. A sexta materializa modelos fixos e variáveis no mês selecionado, preserva valores variáveis por mês e armazena o total da fatura separado das compras. A sétima grava em cada mês se a receita é fixa ou variável, inclusive para receitas avulsas. A oitava pausa modelos duplicados e cria um índice único para manter um único modelo ativo por nome, tipo e grupo. A nona adiciona `households.finance_month_cutoff_day` (virada do mês financeiro, 1 = desligada) e `transactions.competence_month` (competência escolhida manualmente, para contas pagas antecipadamente). Todas as tabelas mantêm políticas RLS que isolam os dados por casa.
 

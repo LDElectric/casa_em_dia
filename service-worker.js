@@ -1,10 +1,11 @@
-const CACHE_NAME = 'casa-em-dia-v11';
+const CACHE_NAME = 'casa-em-dia-v12';
 const APP_SHELL = [
   './',
   './index.html',
   './casa-em-dia.html',
   './app.js',
   './card-statement.mjs',
+  './card-merchant-rules.mjs',
   './smart-classify.mjs',
   './backup.mjs',
   './supabase-config.js',

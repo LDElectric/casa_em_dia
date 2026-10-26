@@ -17,6 +17,7 @@ import {
   normalizeText
 } from './smart-classify.mjs';
 import { backupFileName, buildBackup, centsToCsv, toCsv } from './backup.mjs';
+import { classifyCardEntry as classifyCardEntryByRules, cardMerchantKey } from './card-merchant-rules.mjs';
 
 const config = window.SUPABASE_CONFIG;
 const authScreen = document.getElementById('auth-screen');
@@ -43,6 +44,7 @@ const state = {
   creditCards: [],
   cardStatements: [],
   cardStatementItems: [],
+  cardMerchantRules: [],
   monthlyControlItems: [],
   controlMonthKey: null,
   transactionsMonthKey: null,
@@ -694,6 +696,7 @@ if (!config?.url || !config?.publishableKey) {
       cardsResult,
       statementsResult,
       statementItemsResult,
+      merchantRulesResult,
       monthlyControlResult,
       ensureResult
     ] = await Promise.all([
@@ -763,6 +766,10 @@ if (!config?.url || !config?.publishableKey) {
         .select('id, statement_id, source_key, purchase_date, title, cardholder_label, amount_cents, installment_number, installment_total, category, subcategory, budget_group')
         .eq('household_id', householdId)
         .order('purchase_date', { ascending: false }),
+      supabase.from('card_merchant_rules')
+        .select('id, merchant_key, merchant_label, category, subcategory, budget_group')
+        .eq('household_id', householdId)
+        .order('merchant_key'),
       queryMonthlyControlItems(householdId),
       supabase.rpc('ensure_monthly_control_items', {
         target_month_start: state.controlMonthKey
@@ -787,6 +794,11 @@ if (!config?.url || !config?.publishableKey) {
         showToast('Não foi possível carregar os dados da casa. Tente atualizar a página.');
         return false;
       }
+    }
+    // O dicionário é opcional: sem a migração aplicada o app segue funcionando
+    // apenas com as regras embutidas, sem derrubar o carregamento da casa.
+    if (merchantRulesResult.error) {
+      console.warn('Could not load household merchant rules:', merchantRulesResult.error.message);
     }
 
     let financeCategories = categoriesResult.data;
@@ -831,6 +843,7 @@ if (!config?.url || !config?.publishableKey) {
     state.creditCards = cardsResult.data;
     state.cardStatements = statementsResult.data;
     state.cardStatementItems = statementItemsResult.data;
+    state.cardMerchantRules = merchantRulesResult.error ? [] : (merchantRulesResult.data ?? []);
     state.monthlyControlItems = monthlyControlResult.data;
     state.householdCutoffDay = Number(householdResult.data.finance_month_cutoff_day) || 1;
     if (ensureResult.error) {
@@ -2616,18 +2629,22 @@ if (!config?.url || !config?.publishableKey) {
           const existingItem = categoryBySource.get(row.source_key);
           const savedItem = existingItem && cleanCategoryText(existingItem.category) ? existingItem : null;
           const automaticClassification = savedItem ? null : classifyCardEntry(row.title, merchantHistory);
+          const suggestion = automaticClassification?.matched ? automaticClassification : null;
           return {
             ...row,
             classification_source: savedItem
               ? 'saved'
-              : automaticClassification.source === 'history'
-                ? 'learned'
-                : automaticClassification.matched ? 'automatic' : 'guess',
+              : automaticClassification.source === 'house'
+                ? 'house'
+                : automaticClassification.source === 'history'
+                  ? 'learned'
+                  : automaticClassification.matched ? 'automatic' : 'guess',
             cardholder_label: row.cardholder_label || existingItem?.cardholder_label || null,
-            ...(automaticClassification && {
-              category: automaticClassification.category,
-              subcategory: automaticClassification.subcategory,
-              budget_group: automaticClassification.budget_group
+            // Sem pista no nome, a compra fica "Sem categoria" de propósito.
+            ...(suggestion && {
+              category: suggestion.category,
+              subcategory: suggestion.subcategory,
+              budget_group: suggestion.budget_group
             }),
             ...(savedItem && {
               category: savedItem.category,
@@ -2906,14 +2923,14 @@ if (!config?.url || !config?.publishableKey) {
       };
       classification.className = item.category ? 'statement-classification' : 'statement-classification needs-review';
       classification.textContent = !cleanCategoryText(item.category)
-        ? 'Revisar categoria'
-        : item.classification_source === 'learned'
-          ? 'Padrão já usado nesta casa — confira'
-          : item.classification_source === 'automatic'
-            ? 'Sugestão pelo nome do estabelecimento — confira'
-            : item.classification_source === 'guess'
-              ? 'Sem correspondência — usando Outros'
-              : item.classification_source === 'saved' ? 'Classificação salva' : 'Classificada';
+        ? 'Sem categoria — classifique para o app aprender'
+        : item.classification_source === 'house'
+          ? 'Padrão da casa — confira'
+          : item.classification_source === 'learned'
+            ? 'Padrão já usado nesta casa — confira'
+            : item.classification_source === 'automatic'
+              ? 'Sugestão pelo nome do estabelecimento — confira'
+              : item.classification_source === 'saved' ? 'Classificação salva' : 'Classificação sua';
       const group = document.createElement('select');
       group.className = 'form-input';
       for (const [value, label] of [
@@ -3043,11 +3060,19 @@ if (!config?.url || !config?.publishableKey) {
       confirmButton.disabled = false;
       return;
     }
+    // Tudo o que o usuário classificou na prévia vira padrão da casa.
+    const learnedRows = pending.rows.filter(row =>
+      row.classification_source === 'manual' && cleanCategoryText(row.category));
+    for (const row of learnedRows) {
+      await saveMerchantRule(row.title, row.category, row.subcategory, row.budget_group);
+    }
     state.pendingCardImport = null;
     document.getElementById('card-import-preview').hidden = true;
     document.getElementById('card-import-dialog').close();
     state.selectedImportCardId = null;
-    showToast('Fatura atualizada. As parcelas futuras foram recalculadas.');
+    showToast(learnedRows.length
+      ? `Fatura atualizada. ${learnedRows.length} ${learnedRows.length === 1 ? 'estabelecimento aprendido' : 'estabelecimentos aprendidos'} para as próximas faturas.`
+      : 'Fatura atualizada. As parcelas futuras foram recalculadas.');
     await loadHouseholdData();
   }
 
@@ -3151,6 +3176,7 @@ if (!config?.url || !config?.publishableKey) {
       showToast('Não foi possível salvar a categoria desta compra.');
       return;
     }
+    await saveMerchantRule(item.title, category, subcategory, budgetGroup);
     await loadHouseholdData();
   }
 
@@ -4612,6 +4638,15 @@ if (!config?.url || !config?.publishableKey) {
         : 'Sem compras importadas';
     }
     renderCardCategoryBreakdown(cardEntries);
+    const pendingCardEntries = cardEntries.filter(item => !cleanCategoryText(item.category));
+    const pendingNote = document.getElementById('card-category-pending');
+    if (pendingNote) {
+      const pendingTotal = pendingCardEntries.reduce((sum, item) => sum + Number(item.amount_cents), 0);
+      pendingNote.hidden = !pendingCardEntries.length;
+      pendingNote.textContent = pendingCardEntries.length
+        ? `${pendingCardEntries.length} ${pendingCardEntries.length === 1 ? 'compra sem categoria' : 'compras sem categoria'} (${formatMoney(pendingTotal)}). Classifique em Fixos → Cartões e faturas: o app aprende o estabelecimento para as próximas faturas.`
+        : '';
+    }
 
     const statementMonthKey = state.transactionsMonthKey ?? state.controlMonthKey?.slice(0, 7) ?? currentMonth;
     const statementMonthDate = new Date(`${statementMonthKey.slice(0, 7)}-01T12:00:00`);
@@ -5056,9 +5091,8 @@ if (!config?.url || !config?.publishableKey) {
   }
 
   /**
-   * Aprende com o que já foi classificado na casa: o mesmo estabelecimento
-   * mantém a categoria que o usuário confirmou, mesmo que a regra por nome
-   * sugira outra coisa.
+   * Aprende com o que já foi classificado nas faturas salvas. Serve só como
+   * último recurso, depois das regras explícitas por nome de estabelecimento.
    */
   function cardMerchantHistory() {
     const history = new Map();
@@ -5066,23 +5100,58 @@ if (!config?.url || !config?.publishableKey) {
       const category = cleanCategoryText(item.category);
       const subcategory = cleanCategoryText(item.subcategory);
       if (!category || isCardPayment(item.title)) continue;
-      // "Outros" sem subcategoria costuma ser palpite antigo, não uma escolha.
+      // "Outros" sem subcategoria é palpite, não escolha.
       if (normalizeText(category) === 'outros' && !subcategory) continue;
-      const key = normalizeText(item.title);
+      const key = cardMerchantKey(item.title);
       if (!key || history.has(key)) continue;
       history.set(key, {
         category,
-        subcategory: cleanCategoryText(item.subcategory) || null,
+        subcategory: subcategory || null,
         budget_group: item.budget_group ?? 'variable'
       });
     }
     return history;
   }
 
-  function classifyCardEntry(title, history) {
-    const learned = history?.get(normalizeText(title));
-    if (learned) return { ...learned, matched: true, source: 'history' };
-    return { ...classifyCardPurchase(title, state.financeCategories), source: 'rules' };
+  function classifyCardEntry(title, history = new Map()) {
+    return classifyCardEntryByRules({
+      title,
+      rules: state.cardMerchantRules,
+      categories: state.financeCategories,
+      history
+    });
+  }
+
+  /**
+   * Grava no dicionário da casa o que o usuário escolheu, para o mesmo
+   * estabelecimento já entrar certo nas próximas faturas (inclusive do outro
+   * membro da casa).
+   */
+  async function saveMerchantRule(title, category, subcategory, budgetGroup) {
+    const key = cardMerchantKey(title);
+    if (!key || !category || !state.membership) return;
+    const payload = {
+      household_id: state.membership.household_id,
+      merchant_key: key,
+      merchant_label: String(title ?? '').trim().slice(0, 160) || null,
+      category,
+      subcategory: subcategory ?? null,
+      budget_group: budgetGroup ?? 'variable',
+      created_by: state.user.id,
+      updated_at: new Date().toISOString()
+    };
+    const { data, error } = await supabase.from('card_merchant_rules')
+      .upsert(payload, { onConflict: 'household_id,merchant_key' })
+      .select('id, merchant_key, merchant_label, category, subcategory, budget_group')
+      .single();
+    if (error) {
+      console.warn('Could not save household merchant rule:', error.message);
+      return;
+    }
+    state.cardMerchantRules = [
+      ...state.cardMerchantRules.filter(rule => rule.merchant_key !== data.merchant_key),
+      data
+    ];
   }
 
   function localDate(date) {
