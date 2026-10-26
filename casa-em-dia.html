@@ -279,17 +279,20 @@
     }
     .payment-card-statement strong { font-size: 16px; font-variant-numeric: tabular-nums; }
     .payment-card-statement span, .payment-card-statement.empty { color: var(--text-tertiary); font-size: 11px; }
-    .payment-card-actions { display: flex; flex-direction: column; align-items: stretch; gap: 5px; }
+    .payment-card-actions { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
     .payment-card-import {
+      min-height: 40px;
       padding: 8px 11px; border: 1px solid var(--separator); border-radius: 10px;
       background: var(--bg-secondary); color: var(--accent); font: inherit;
       font-size: 12px; font-weight: 650; white-space: nowrap; cursor: pointer;
     }
     .payment-card-import:hover { background: var(--accent-soft); }
     .payment-card-history {
-      padding: 5px; border: 0; background: transparent; color: var(--text-tertiary);
-      font: inherit; font-size: 11px; cursor: pointer;
+      min-height: 36px; padding: 8px 6px; border: 0; background: transparent;
+      color: var(--text-secondary); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+      border-radius: 10px;
     }
+    .payment-card-history:hover { background: var(--bg-secondary); color: var(--accent); }
     .card-import-dialog {
       width: min(680px, calc(100% - 24px));
       max-width: none;
@@ -483,6 +486,11 @@
     .card-form-extra summary::before { content: "+"; margin-right: 8px; color: var(--accent); font-weight: 700; }
     .card-form-extra[open] summary::before { content: "–"; }
     .card-form-extra .form-group { margin: 4px 0 0; }
+    @media (max-width: 400px) {
+      #card-form-dialog .item-dialog-actions { flex-direction: column-reverse; }
+      #card-form-dialog .item-dialog-actions .primary-btn,
+      #card-form-dialog .item-dialog-actions .secondary-btn { width: 100%; }
+    }
     body.dialog-open { overflow: hidden; }
 
     .form-group { margin-bottom: 16px; }
@@ -1500,7 +1508,7 @@
       </div>
       <div class="form-group" id="payment-method-wrap">
         <label class="form-label" for="payment-method">Meio de pagamento</label>
-        <select class="form-input" id="payment-method"><option value="cash">Dinheiro</option><option value="debit">Débito</option><option value="transfer">Transferência/Pix</option><option value="other">Outro</option></select>
+        <select class="form-input" id="payment-method"><option value="cash">Dinheiro</option><option value="debit">Débito</option><option value="credit">Cartão de crédito</option><option value="transfer">Transferência/Pix</option><option value="other">Outro</option></select>
       </div>
       <div class="form-group" id="entry-credit-card-wrap" hidden>
         <label class="form-label" for="entry-credit-card">Cartão</label>
@@ -1658,11 +1666,15 @@
     }
     window.changeTransactionMonth = changeTransactionMonth;
 
-    function openSheet(type = 'expense') {
+    function openSheet(type = 'expense', creditCardId = '') {
       if (type === 'card') {
         setType('expense'); setFreq('once');
-        document.getElementById('payment-method').value = 'credit';
-        document.getElementById('payment-method').dispatchEvent(new Event('change'));
+        const paymentSelect = document.getElementById('payment-method');
+        const cardSelect = document.getElementById('entry-credit-card');
+        if (creditCardId && cardSelect) cardSelect.value = creditCardId;
+        paymentSelect.value = 'credit';
+        paymentSelect.dispatchEvent(new Event('change'));
+        if (creditCardId && cardSelect) cardSelect.value = creditCardId;
         document.getElementById('group-card-tip').style.display = 'block';
       } else if (type === 'recurring') {
         setType('expense'); setFreq('monthly');

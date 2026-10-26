@@ -3652,7 +3652,13 @@ if (!config?.url || !config?.publishableKey) {
           document.getElementById('card-statement-list').scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, 50);
       });
-      actions.append(importButton, historyButton);
+      const expenseButton = document.createElement('button');
+      expenseButton.type = 'button';
+      expenseButton.className = 'payment-card-history';
+      expenseButton.textContent = '+ Lançar compra';
+      expenseButton.setAttribute('aria-label', `Lançar uma compra no ${card.label}`);
+      expenseButton.addEventListener('click', () => window.openSheet('card', card.id));
+      actions.append(importButton, expenseButton, historyButton);
       row.append(info, actions);
       cardList.append(row);
     }
