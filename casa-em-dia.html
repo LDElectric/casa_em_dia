@@ -259,6 +259,9 @@
     .backup-title { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 650; }
     .backup-card .helper { margin: 0; text-align: left; }
     .backup-card .secondary-btn { margin: 0; }
+    .cutoff-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .cutoff-row .form-input { width: 110px; max-width: 40%; margin: 0; text-align: center; font-weight: 700; }
+    .cutoff-row .secondary-btn { width: auto; min-height: 44px; margin: 0; padding: 10px 18px; }
     .payment-card-tile {
       display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
       gap: 14px; margin: 12px; padding: 14px;
@@ -1327,7 +1330,7 @@
           <div class="card backup-card" id="household-cutoff-card">
             <div class="backup-title"><span aria-hidden="true">📅</span>Virada do mês</div>
             <p class="helper">Com o salário caindo no 5º dia útil, o que entra até o dia escolhido do mês seguinte conta no mês anterior — a fatura já segue essa ideia (vencimento até o dia 15 cai no mês anterior). Use 1 para desligar e voltar ao mês do calendário.</p>
-            <div class="quick-add-row">
+            <div class="cutoff-row">
               <input class="form-input" id="household-cutoff-day" type="number" min="1" max="15" inputmode="numeric" aria-label="Dia da virada do mês financeiro" />
               <button class="secondary-btn" type="button" id="save-household-cutoff">Salvar</button>
             </div>
