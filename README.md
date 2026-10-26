@@ -55,7 +55,7 @@ O app separa **competência** (a que mês o dinheiro pertence) da **data do lan�
 
 - **Faturas de cartão** entram pelo mês de competência: vencimento até o dia 15 conta no mês anterior (07/11 → outubro);
 - **Virada do mês financeiro** em **Ajustes → Mês financeiro**, exclusiva do responsável: com a virada no dia N, lançamentos do extrato datados até o dia N do mês seguinte contam no mês anterior. É o caso do salário que cai no 5º dia útil e paga as contas do mês que acabou. O valor **1 desliga** a regra e volta ao mês do calendário;
-- **Mês de competência** na ficha de lançamento: escolha um mês específico para contas pagas antecipadamente ou atrasadas. O apontamento manual vence a virada;
+- **Mês de competência** na ficha de lançamento: escolha um mês específico para contas pagas antecipadamente ou atrasadas. O apontamento manual vence a virada. Para corrigir um lançamento que já existe, use o botão **Mês** na linha do item (tela Mês) e escolha a competência, ou volte para **Automático**;
 - **Pagamento de fatura** lançado no extrato (título começando por "Pagamento" e contendo "fatura") **não entra no resumo**: o total da fatura já é contado no mês de competência, então somar o pagamento contaria o mesmo dinheiro duas vezes. O lançamento continua no Extrato, marcado como *fora do resumo*.
 
 ## Duplicidade de lançamentos

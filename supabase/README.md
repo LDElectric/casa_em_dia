@@ -2,7 +2,7 @@
 
 ## 1. Criar as tabelas e as políticas
 
-As cinco primeiras migrações abaixo já foram aplicadas ao projeto vinculado `Casa_em_dia`. A quinta cria o controle mensal simplificado e prepara os lançamentos existentes como itens mensais, sem apagar as tabelas originais. A sexta adiciona recorrências mensais e variáveis e o total declarado das faturas. A sétima separa receitas fixas e variáveis em cada mês. A oitava impede modelos fixos duplicados. A nona define o mês financeiro (virada do mês e competência manual). Em qualquer projeto, abra **SQL Editor** e execute nesta ordem:
+As nove migrações abaixo estão aplicadas ao projeto vinculado `Casa_em_dia`. A quinta cria o controle mensal simplificado e prepara os lançamentos existentes como itens mensais, sem apagar as tabelas originais. A sexta adiciona recorrências mensais e variáveis e o total declarado das faturas. A sétima separa receitas fixas e variáveis em cada mês. A oitava impede modelos fixos duplicados. A nona define o mês financeiro (virada do mês e competência manual). Em qualquer projeto novo, abra **SQL Editor** e execute nesta ordem:
 
 1. `migrations/20261018000000_household_finances.sql`
 2. `migrations/20261018160000_household_finance_model.sql`

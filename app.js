@@ -153,6 +153,13 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('budget-target-type').addEventListener('change', updateBudgetTargetCardField);
     document.getElementById('cancel-budget-target-edit').addEventListener('click', resetBudgetTargetForm);
     document.getElementById('save-household-cutoff').addEventListener('click', saveHouseholdCutoff);
+    const transactionDialog = document.getElementById('transaction-dialog');
+    document.getElementById('transaction-dialog-form').addEventListener('submit', saveTransactionCompetence);
+    document.getElementById('transaction-dialog-close').addEventListener('click', closeTransactionDialog);
+    transactionDialog.addEventListener('click', event => {
+      if (event.target === transactionDialog) closeTransactionDialog();
+    });
+    transactionDialog.addEventListener('close', () => document.body.classList.remove('dialog-open'));
     document.getElementById('household-setup-import-form').addEventListener('submit', prepareHouseholdImport);    document.getElementById('confirm-household-import').addEventListener('click', confirmHouseholdImport);
     document.getElementById('reserve-movement-form').addEventListener('submit', saveReserveMovement);
     document.getElementById('credit-card-form').addEventListener('submit', saveCreditCard);
@@ -1554,24 +1561,104 @@ if (!config?.url || !config?.publishableKey) {
     setDefaultBudgetGroup();
   }
 
-  function renderEntryCompetenceOptions() {
-    const select = document.getElementById('entry-competence');
+  function fillCompetenceOptions(select, { currentValue = '', baseMonthKey = null, span = 2 } = {}) {
     if (!select) return;
-    const current = select.value;
     select.replaceChildren(new Option('Automático (virada do mês)', ''));
-    const base = state.controlMonthKey ? new Date(`${state.controlMonthKey}T12:00:00`) : new Date();
-    for (let offset = -2; offset <= 2; offset += 1) {
+    const base = baseMonthKey
+      ? new Date(`${baseMonthKey}-01T12:00:00`)
+      : state.controlMonthKey ? new Date(`${state.controlMonthKey}T12:00:00`) : new Date();
+    for (let offset = -span; offset <= span; offset += 1) {
       const date = new Date(base.getFullYear(), base.getMonth() + offset, 1);
       const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
       const label = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(date);
       select.add(new Option(label, value));
     }
-    select.value = [...select.options].some(option => option.value === current) ? current : '';
+    select.value = currentValue && [...select.options].some(option => option.value === currentValue)
+      ? currentValue
+      : '';
+  }
+
+  function competenceAutomaticNote() {
+    return state.householdCutoffDay > 1
+      ? `Automático: lançamentos até o dia ${state.householdCutoffDay} do mês seguinte contam no mês anterior.`
+      : 'Automático usa o mês da data.';
+  }
+
+  function renderEntryCompetenceOptions() {
+    const select = document.getElementById('entry-competence');
+    if (!select) return;
+    fillCompetenceOptions(select, { currentValue: select.value });
     const note = document.getElementById('entry-competence-note');
     if (note) {
-      note.textContent = state.householdCutoffDay > 1
-        ? `Automático: lançamentos até o dia ${state.householdCutoffDay} do mês seguinte contam no mês anterior. Escolha um mês para contas pagas antecipadamente.`
-        : 'Automático usa o mês da data. Escolha um mês para contas pagas antecipadamente ou atrasadas.';
+      note.textContent = `${competenceAutomaticNote()} Escolha um mês para contas pagas antecipadamente.`;
+    }
+  }
+
+  let editingTransactionId = null;
+
+  function openTransactionDialog(item) {
+    editingTransactionId = item.source_transaction_id ?? null;
+    const transaction = state.transactions.find(row => row.id === editingTransactionId);
+    if (!transaction) {
+      showToast('Não foi possível encontrar este lançamento. Atualize a página.');
+      return;
+    }
+    document.getElementById('transaction-dialog-subtitle').textContent =
+      `${transaction.title} · ${formatDate(transaction.transaction_date)} · ${formatMoney(Number(transaction.amount_cents))}`;
+    fillCompetenceOptions(document.getElementById('transaction-competence'), {
+      currentValue: transaction.competence_month ?? '',
+      baseMonthKey: entryFinancialMonthKey(transaction)
+    });
+    const note = document.getElementById('transaction-competence-note');
+    note.textContent = `${competenceAutomaticNote()} O mês escolhido aqui vence a virada, para contas pagas antecipadamente ou atrasadas.`;
+    setMessage('transaction-dialog-message', '');
+    const dialog = document.getElementById('transaction-dialog');
+    document.body.classList.add('dialog-open');
+    if (typeof dialog.showModal === 'function') {
+      dialog.showModal();
+    } else {
+      dialog.setAttribute('open', '');
+    }
+    window.setTimeout(() => document.getElementById('transaction-competence').focus({ preventScroll: true }), 120);
+  }
+
+  function closeTransactionDialog() {
+    const dialog = document.getElementById('transaction-dialog');
+    document.body.classList.remove('dialog-open');
+    editingTransactionId = null;
+    if (!dialog) return;
+    if (typeof dialog.close === 'function' && dialog.open) {
+      dialog.close();
+    } else {
+      dialog.removeAttribute('open');
+    }
+  }
+
+  async function saveTransactionCompetence(event) {
+    event.preventDefault();
+    if (!editingTransactionId) return;
+    const value = document.getElementById('transaction-competence').value || null;
+    const saveButton = document.getElementById('transaction-dialog-save');
+    saveButton.disabled = true;
+    setMessage('transaction-dialog-message', 'Salvando...');
+    try {
+      const { error } = await supabase.from('transactions')
+        .update({ competence_month: value })
+        .eq('id', editingTransactionId)
+        .eq('household_id', state.membership.household_id);
+      if (error) throw error;
+      closeTransactionDialog();
+      showToast(value
+        ? `Competência alterada para ${formatMonthKey(value)}.`
+        : 'Competência automática restaurada.');
+      await loadHouseholdData();
+    } catch (error) {
+      console.error('Could not update the transaction competence:', error?.message ?? error);
+      setMessage('transaction-dialog-message', isMissingColumnError(error, 'competence_month')
+        ? 'A migração do mês financeiro precisa ser aplicada no Supabase.'
+        : 'Não foi possível salvar a competência. Tente novamente.');
+    } finally {
+      saveButton.disabled = false;
     }
   }
 
@@ -3623,8 +3710,11 @@ if (!config?.url || !config?.publishableKey) {
           : '';
         const forecast = item.is_forecast ? ' · Prevista' : '';
         const origin = item.card_label ?? item.category;
+        const competenceTag = item.competence_month
+          ? ` · competência ${formatMonthKey(item.competence_month)}`
+          : '';
         subtitle.textContent =
-          `${origin ?? 'Lançamento'} · ${formatDate(item.display_date ?? item.transaction_date)}${installment}${forecast}`;
+          `${origin ?? 'Lançamento'} · ${formatDate(item.display_date ?? item.transaction_date)}${installment}${forecast}${competenceTag}`;
         info.append(title, subtitle);
         const actions = document.createElement('div');
         actions.className = 'control-card-item-actions';
@@ -3646,6 +3736,13 @@ if (!config?.url || !config?.publishableKey) {
           actions.append(move);
         }
         if (item.source_transaction_id) {
+          const monthButton = document.createElement('button');
+          monthButton.type = 'button';
+          monthButton.className = 'control-row-month';
+          monthButton.textContent = 'Mês';
+          monthButton.setAttribute('aria-label', `Mudar o mês de competência de ${item.title}`);
+          monthButton.addEventListener('click', () => openTransactionDialog(item));
+          actions.append(monthButton);
           const remove = document.createElement('button');
           remove.type = 'button';
           remove.className = 'control-row-remove';

@@ -613,6 +613,11 @@
       border: 0; background: transparent; color: var(--text-tertiary);
       font: inherit; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px;
     }
+    .control-card-item-actions .control-row-month {
+      min-height: 32px; padding: 6px 10px; border: 1px solid var(--separator); border-radius: 9px;
+      background: var(--bg-secondary); color: var(--accent);
+      font: inherit; font-size: 12px; font-weight: 650; cursor: pointer;
+    }
     .recurring-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
     .recurring-action {
       border: 0; background: transparent; color: var(--accent);
@@ -1614,6 +1619,25 @@
         <button class="primary-btn" type="submit" id="card-form-save-import">Salvar e importar fatura</button>
       </div>
       <p class="helper" id="card-form-dialog-message" role="status" aria-live="polite"></p>
+    </form>
+  </dialog>
+
+  <dialog class="item-dialog" id="transaction-dialog" aria-labelledby="transaction-dialog-title">
+    <form class="item-dialog-card" id="transaction-dialog-form" novalidate>
+      <header class="item-dialog-header">
+        <h2 id="transaction-dialog-title">Ajustar lançamento</h2>
+        <button class="item-dialog-close" type="button" id="transaction-dialog-close" aria-label="Fechar">×</button>
+      </header>
+      <p class="helper" id="transaction-dialog-subtitle"></p>
+      <div class="form-group">
+        <label class="form-label" for="transaction-competence">Mês de competência</label>
+        <select class="form-input" id="transaction-competence"><option value="">Automático</option></select>
+        <p class="helper" id="transaction-competence-note"></p>
+      </div>
+      <div class="item-dialog-actions">
+        <button class="primary-btn" type="submit" id="transaction-dialog-save">Salvar</button>
+      </div>
+      <p class="helper" id="transaction-dialog-message" role="status" aria-live="polite"></p>
     </form>
   </dialog>
 
