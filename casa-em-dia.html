@@ -633,6 +633,17 @@
       border: 0; background: transparent; color: var(--accent);
       font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; padding: 6px;
     }
+    .income-row { align-items: flex-start; }
+    .income-row .info { display: flex; flex-direction: column; gap: 4px; }
+    .income-row-value { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .income-row-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .income-row-actions button {
+      border: 0; border-radius: 999px; background: var(--bg-secondary); color: var(--accent);
+      font: inherit; font-size: 12px; font-weight: 600; padding: 7px 11px; cursor: pointer;
+    }
+    .income-row-actions button.danger { color: var(--red); }
+    .income-row .form-input { max-width: 200px; }
+    .income-row .recurring-amount-save { align-self: flex-start; }
     .statement-classification {
       display: inline-block; width: fit-content; padding: 3px 7px; border-radius: 7px;
       background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 600;
@@ -1111,6 +1122,7 @@
       <div class="logo">Casa <span>em Dia</span></div>
       <nav class="desktop-nav">
         <button class="active" data-screen="home" onclick="showScreen('home')">Mês</button>
+        <button data-screen="income" onclick="showScreen('income')">Receitas</button>
         <button data-screen="insights" onclick="showScreen('insights')">Insights</button>
         <button data-screen="transactions" onclick="showScreen('transactions')">Extrato</button>
         <button data-screen="recurring" onclick="showScreen('recurring')">Fixos</button>
@@ -1194,6 +1206,7 @@
           <details class="control-group" aria-labelledby="control-income-title">
             <summary class="control-group-heading"><h2 id="control-income-title"><span class="group-icon" aria-hidden="true">💰</span>Receitas</h2><span class="control-group-total" id="control-income-total">R$ 0,00</span></summary>
             <div class="control-list" id="control-income-list"></div>
+            <button class="secondary-btn control-copy-button" type="button" onclick="showScreen('income')">Ver e gerenciar todas as receitas</button>
           </details>
           <details class="control-group" aria-labelledby="control-fixed-title">
             <summary class="control-group-heading"><h2 id="control-fixed-title"><span class="group-icon" aria-hidden="true">🏠</span>Gastos fixos</h2><span class="control-group-total" id="control-fixed-total">R$ 0,00</span></summary>
@@ -1230,6 +1243,55 @@
               <div class="empty-state">Carregando projeção financeira...</div>
             </div>
           </details>
+        </div>
+      </div>
+    </div>
+
+    <!-- RECEITAS -->
+    <div class="screen" id="screen-income">
+      <div class="nav-header">
+        <div class="nav-title" style="font-size:28px">Receitas</div>
+        <div class="nav-subtitle">O que entra todo mês e o que é pontual</div>
+      </div>
+      <div class="content">
+        <div class="section">
+          <div class="month-selector" aria-label="Selecionar mês das receitas">
+            <button type="button" onclick="changeControlMonth(-1)" aria-label="Mês anterior">‹</button>
+            <span class="current" id="income-month-label">Este mês</span>
+            <button type="button" onclick="changeControlMonth(1)" aria-label="Próximo mês">›</button>
+          </div>
+          <div class="control-summary">
+            <div><span>Fixas que repetem</span><strong id="income-summary-fixed">R$ 0,00</strong><small class="summary-detail" id="income-summary-fixed-detail">Nenhuma receita fixa</small></div>
+            <div><span>Variáveis do mês</span><strong id="income-summary-variable">R$ 0,00</strong><small class="summary-detail" id="income-summary-variable-detail">Nenhuma receita variável</small></div>
+            <div class="balance"><span>Total do mês</span><strong id="income-summary-total">R$ 0,00</strong><small class="summary-detail" id="income-summary-total-detail">Sem receitas</small></div>
+          </div>
+          <p class="helper" id="income-message" role="status" aria-live="polite"></p>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Receitas que repetem todo mês</div>
+          <div class="list" id="income-recurring-list"></div>
+          <p class="helper">Salário e benefícios fixos ficam aqui. Parar a repetição remove os meses futuros e mantém o histórico; excluir apaga o modelo.</p>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Receitas deste mês</div>
+          <div class="list" id="income-month-list"></div>
+          <button class="secondary-btn control-copy-button" type="button" id="income-restore-removed" hidden></button>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Adicionar receita</div>
+          <form class="quick-add-card" id="income-add-form" data-control-group="income">
+            <div class="quick-add-row">
+              <input class="form-input" name="item_name" maxlength="120" placeholder="Ex.: Salário, auxílio-creche" aria-label="Nome da receita" required />
+              <input class="form-input" name="amount" inputmode="decimal" placeholder="Valor" aria-label="Valor da receita" />
+            </div>
+            <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" checked /> Repetir todo mês na renda da casa</label>
+            <label class="control-repeat-option control-variable-option"><input name="variable_amount" type="checkbox" /> Valor varia por mês (ex.: hora extra, freelance)</label>
+            <button class="primary-btn" type="submit">Adicionar receita</button>
+            <p class="helper">Com repetição desmarcada, a receita vale só para o mês selecionado.</p>
+          </form>
         </div>
       </div>
     </div>
@@ -1471,6 +1533,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
         Mês
       </button>
+      <button class="tab-item" data-screen="income" onclick="showScreen('income')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3v13"/><polyline points="7 11 12 16 17 11"/><path d="M4 21h16"/></svg>
+        Receitas
+      </button>
       <button class="tab-item" data-screen="transactions" onclick="showScreen('transactions')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
         Extrato
@@ -1595,6 +1661,7 @@
         <p class="helper">Corrija aqui se a classificação automática não ficou certa.</p>
       </div>
       <div class="item-dialog-actions">
+        <button class="secondary-btn" type="button" id="control-item-stop-recurring" hidden>Parar de repetir</button>
         <button class="secondary-btn" type="button" id="control-item-delete">Excluir</button>
         <button class="primary-btn" type="submit" id="control-item-save">Salvar</button>
       </div>

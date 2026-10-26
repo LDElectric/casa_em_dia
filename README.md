@@ -49,6 +49,16 @@ O caminho curto para começar a usar cartão fica na própria tela **Mês**:
 
 São 4 toques no caminho feliz, contra 8 a 10 do fluxo anterior (que exigia ir a **Fixos**, preencher nome e operadora e depois voltar para importar). Quando a despesa é no cartão e nenhum cartão está cadastrado, a própria ficha de lançamento mostra **Cadastrar novo cartão**; o cartão criado já sai selecionado na despesa, sem perder o que foi digitado. O formulário completo (titular, limite, edição) continua em **Fixos → Cartões e faturas**, e a operadora passou a ser opcional nos dois caminhos.
 
+## Painel de receitas
+
+A aba **Receitas** (também acessível por *Ver e gerenciar todas as receitas*, dentro do grupo Receitas da aba Mês) mostra a renda da casa em três blocos:
+
+- **Receitas que repetem todo mês** — os modelos fixos e variáveis (salário, benefícios, freelance): valor, tipo, desde quando e quantos meses já foram gerados. Ações: **Salvar valor**, **Marcar como fixa/variável**, **Parar de repetir** (encerra a repetição e remove os meses futuros, mantendo o histórico) e **Excluir receita** (apaga o modelo);
+- **Receitas deste mês** — o que de fato entrou no mês selecionado, com **Ajustar** (valor, tipo e grupo), **Parar de repetir** e **Remover deste mês** (sai só deste mês). Se alguma receita foi removida do mês, o botão **Restaurar receitas removidas** reaparece;
+- **Adicionar receita** — nome, valor e **Repetir todo mês** marcado por padrão (desmarcado, vale só para o mês). Com "valor varia por mês", cada mês começa sem valor para você preencher.
+
+Correção de repetição: encerrar ou excluir uma receita fixa agora corta sempre a partir do **mês atual real** (não do mês que está sendo exibido) e limpa as linhas futuras que ficavam órfãs. Antes, ao excluir o modelo olhando um mês futuro, as linhas daquele mês sobreviviam sem vínculo e continuavam aparecendo em outros meses como "avulsas".
+
 ## Mês financeiro (virada e competência)
 
 O app separa **competência** (a que mês o dinheiro pertence) da **data do lançamento**:

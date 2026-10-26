@@ -213,8 +213,10 @@ if (!config?.url || !config?.publishableKey) {
     });
     document.getElementById('copy-control-items').addEventListener('click', copyPreviousMonthItems);
     document.getElementById('restore-removed-items').addEventListener('click', restoreRemovedItems);
+    document.getElementById('income-restore-removed').addEventListener('click', restoreRemovedIncomeRows);
     const controlItemDialog = document.getElementById('control-item-dialog');
     document.getElementById('control-item-form').addEventListener('submit', saveControlItemAdjustment);
+    document.getElementById('control-item-stop-recurring').addEventListener('click', stopControlItemRecurrence);
     document.getElementById('control-item-delete').addEventListener('click', deleteControlItemFromDialog);
     document.querySelectorAll('#control-item-dialog [data-close-dialog]').forEach(button =>
       button.addEventListener('click', closeControlItemDialog));
@@ -1280,6 +1282,45 @@ if (!config?.url || !config?.publishableKey) {
 
   let editingControlItem = null;
 
+  /**
+   * Corte para encerrar uma repetição: o mês atual real, não o mês em exibição.
+   * Sem isso, ao olhar um mês futuro e excluir o modelo, as linhas já geradas
+   * daquele mês sobreviviam sem vínculo e continuavam aparecendo como avulsas.
+   */
+  function recurringCutoffMonthStart() {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+  }
+
+  /**
+   * Remove linhas futuras que ficaram órfãs (recurring_item_id nulo) quando um
+   * modelo foi apagado em outra sessão. Só toca no mesmo nome e tipo.
+   */
+  async function removeOrphanMonthRows(title, transactionType, cutoffMonthStart) {
+    const householdId = state.membership?.household_id;
+    if (!householdId || !title) return 0;
+    const { data, error } = await supabase.from('monthly_control_items')
+      .select('id, item_name')
+      .eq('household_id', householdId)
+      .eq('transaction_type', transactionType)
+      .is('recurring_item_id', null)
+      .gt('month_start', cutoffMonthStart);
+    if (error || !data?.length) return 0;
+    const normalized = normalizeControlName(title);
+    const ids = data
+      .filter(row => normalizeControlName(row.item_name) === normalized)
+      .map(row => row.id);
+    if (!ids.length) return 0;
+    const { error: deleteError } = await supabase.from('monthly_control_items')
+      .delete()
+      .in('id', ids);
+    if (deleteError) {
+      console.warn('Could not remove orphan monthly rows:', deleteError.message);
+      return 0;
+    }
+    return ids.length;
+  }
+
   async function pauseRecurringTemplate(templateId, fromMonthStart) {
     const householdId = state.membership.household_id;
     const { error } = await supabase.from('recurring_items')
@@ -1340,6 +1381,11 @@ if (!config?.url || !config?.publishableKey) {
     const deleteButton = document.getElementById('control-item-delete');
     deleteButton.textContent = item.recurring_item_id ? 'Excluir deste mês' : 'Excluir';
     deleteButton.disabled = false;
+    const stopButton = document.getElementById('control-item-stop-recurring');
+    if (stopButton) {
+      stopButton.hidden = !item.recurring_item_id;
+      stopButton.disabled = false;
+    }
     document.getElementById('control-item-save').disabled = false;
     setMessage('control-item-dialog-message', '');
     updateControlItemDialogNote();
@@ -1480,6 +1526,42 @@ if (!config?.url || !config?.publishableKey) {
     } finally {
       saveButton.disabled = false;
     }
+  }
+
+  /** Encerra a repetição a partir do mês atual, mantendo o histórico. */
+  async function stopControlItemRecurrence() {
+    const item = editingControlItem;
+    const template = state.recurringItems.find(entry => entry.id === item?.recurring_item_id);
+    if (!item || !template) return;
+    if (!window.confirm(
+      `Parar de repetir "${template.title}"? Os meses futuros serão removidos; os meses já lançados continuam no histórico.`
+    )) return;
+    const stopButton = document.getElementById('control-item-stop-recurring');
+    if (stopButton) stopButton.disabled = true;
+    const householdId = state.membership.household_id;
+    const cutoff = recurringCutoffMonthStart();
+    const { error } = await supabase.from('recurring_items')
+      .update({ active: false })
+      .eq('id', template.id)
+      .eq('household_id', householdId);
+    if (error) {
+      console.error('Could not stop recurring item:', error.message);
+      setMessage('control-item-dialog-message', 'Não foi possível encerrar a repetição.');
+      if (stopButton) stopButton.disabled = false;
+      return;
+    }
+    const { error: futureError } = await supabase.from('monthly_control_items')
+      .delete()
+      .eq('recurring_item_id', template.id)
+      .gt('month_start', cutoff)
+      .eq('household_id', householdId);
+    if (futureError) {
+      console.warn('Could not remove future months when stopping recurrence:', futureError.message);
+    }
+    await removeOrphanMonthRows(template.title, template.transaction_type, cutoff);
+    closeControlItemDialog();
+    showToast('Repetição encerrada; os meses futuros foram removidos.');
+    await loadHouseholdData();
   }
 
   async function deleteControlItemFromDialog() {
@@ -3639,14 +3721,16 @@ if (!config?.url || !config?.publishableKey) {
       return;
     }
     if (!nextActive) {
+      const cutoff = recurringCutoffMonthStart();
       const { error: futureError } = await supabase.from('monthly_control_items')
         .delete()
         .eq('recurring_item_id', item.id)
-        .gt('month_start', state.controlMonthKey)
+        .gt('month_start', cutoff)
         .eq('household_id', state.membership.household_id);
       if (futureError) {
         console.warn('Could not remove future monthly items:', futureError.message);
       }
+      await removeOrphanMonthRows(item.title, item.transaction_type, cutoff);
     }
     showToast(nextActive
       ? 'Repetição reativada; o item volta a aparecer nos próximos meses.'
@@ -3688,10 +3772,11 @@ if (!config?.url || !config?.publishableKey) {
       return;
     }
     const householdId = state.membership.household_id;
+    const cutoff = recurringCutoffMonthStart();
     const { error: futureError } = await supabase.from('monthly_control_items')
       .delete()
       .eq('recurring_item_id', item.id)
-      .gt('month_start', state.controlMonthKey)
+      .gt('month_start', cutoff)
       .eq('household_id', householdId);
     if (futureError) {
       console.warn('Could not remove future monthly items before deleting the template:', futureError.message);
@@ -3706,7 +3791,12 @@ if (!config?.url || !config?.publishableKey) {
       showToast('Não foi possível remover o item.');
       return;
     }
-    showToast('Modelo removido.');
+    // A FK deixa recurring_item_id nulo: limpa as linhas futuras que ficariam
+    // como "avulsas" e voltariam a aparecer nos outros meses.
+    const removed = await removeOrphanMonthRows(item.title, item.transaction_type, cutoff);
+    showToast(removed
+      ? `Modelo removido e ${removed} ${removed === 1 ? 'mês futuro limpo' : 'meses futuros limpos'}.`
+      : 'Modelo removido.');
     await loadHouseholdData();
   }
 
@@ -4307,12 +4397,9 @@ if (!config?.url || !config?.publishableKey) {
         });
         if (rowError) throw rowError;
         form.reset();
-        setMessage('monthly-control-message', existingRow
+        reportControlMessage(existingRow
           ? `Item restaurado em ${groupLabel}${reasonLabel ? ` (${reasonLabel})` : ''} e fixado para os próximos meses.`
           : `Item fixo salvo em ${groupLabel}${reasonLabel ? ` (${reasonLabel})` : ''}; ele aparecerá automaticamente nos próximos meses.`);
-        showToast(existingRow
-          ? `Item restaurado em ${groupLabel} e fixado para os próximos meses.`
-          : `Item fixo salvo em ${groupLabel}; ele aparecerá nos próximos meses.`);
         await loadHouseholdData();
         return;
       }
@@ -4346,12 +4433,9 @@ if (!config?.url || !config?.publishableKey) {
       }
       if (error) throw error;
       form.reset();
-      setMessage('monthly-control-message', existingRow
+      reportControlMessage(existingRow
         ? `Item restaurado em ${groupLabel}${reasonLabel ? ` (${reasonLabel})` : ''}.`
         : `Item adicionado em ${groupLabel}${reasonLabel ? ` (${reasonLabel})` : ''}.`);
-      showToast(existingRow
-        ? `Item restaurado em ${groupLabel}.`
-        : `Item adicionado em ${groupLabel}.`);
       await refreshControlState();
     } catch (error) {
       console.error('Could not add monthly control item:', error?.message ?? error);
@@ -4368,6 +4452,8 @@ if (!config?.url || !config?.publishableKey) {
 
   function reportControlMessage(message) {
     setMessage('monthly-control-message', message);
+    const incomeMessage = document.getElementById('income-message');
+    if (incomeMessage) incomeMessage.textContent = message;
     if (message) showToast(message);
   }
 
@@ -4580,6 +4666,282 @@ if (!config?.url || !config?.publishableKey) {
     await refreshControlState();
   }
 
+  /**
+   * Painel de receitas: mostra o que repete todo mês (modelos), o que existe
+   * no mês selecionado e permite adicionar, parar a repetição ou excluir.
+   */
+  function incomeTemplateBehavior(template) {
+    return template?.amount_behavior === 'fixed' ? 'fixed' : 'variable';
+  }
+
+  function incomeRowBehavior(row) {
+    const template = state.recurringItems.find(item => item.id === row.recurring_item_id);
+    if (!template) return 'once';
+    return row.income_behavior ?? incomeTemplateBehavior(template);
+  }
+
+  function monthsGeneratedByTemplate(templateId) {
+    return state.monthlyControlItems.filter(row =>
+      row.recurring_item_id === templateId && !row.is_skipped);
+  }
+
+  function renderIncomePanel() {
+    const monthStart = state.controlMonthKey;
+    const monthList = document.getElementById('income-month-list');
+    if (!monthStart || !monthList) return;
+    const monthLabel = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' })
+      .format(new Date(`${monthStart}T12:00:00`));
+    document.getElementById('income-month-label').textContent = monthLabel;
+
+    const monthRows = state.monthlyControlItems
+      .filter(item => item.month_start === monthStart
+        && !item.is_skipped
+        && item.transaction_type === 'income')
+      .sort((left, right) => left.item_name.localeCompare(right.item_name, 'pt-BR'));
+    let fixedTotal = 0;
+    let variableTotal = 0;
+    let fixedCount = 0;
+    let variableCount = 0;
+    for (const row of monthRows) {
+      const amount = Number(row.amount_cents ?? 0);
+      if (incomeRowBehavior(row) === 'fixed') {
+        fixedTotal += amount;
+        fixedCount += 1;
+      } else {
+        variableTotal += amount;
+        variableCount += 1;
+      }
+    }
+    document.getElementById('income-summary-fixed').textContent = formatMoney(fixedTotal);
+    document.getElementById('income-summary-fixed-detail').textContent = fixedCount
+      ? `${fixedCount} ${fixedCount === 1 ? 'receita fixa' : 'receitas fixas'} neste mês`
+      : 'Nenhuma receita fixa';
+    document.getElementById('income-summary-variable').textContent = formatMoney(variableTotal);
+    document.getElementById('income-summary-variable-detail').textContent = variableCount
+      ? `${variableCount} ${variableCount === 1 ? 'receita variável ou avulsa' : 'receitas variáveis ou avulsas'}`
+      : 'Nenhuma receita variável';
+    document.getElementById('income-summary-total').textContent = formatMoney(fixedTotal + variableTotal);
+    document.getElementById('income-summary-total-detail').textContent = monthRows.length
+      ? `${monthRows.length} ${monthRows.length === 1 ? 'receita' : 'receitas'} em ${monthLabel}`
+      : 'Sem receitas neste mês';
+
+    renderIncomeTemplates();
+    monthList.replaceChildren();
+    if (!monthRows.length) {
+      appendEmptyState(monthList, 'Nenhuma receita neste mês. Adicione abaixo ou reative uma receita fixa.');
+    }
+    for (const row of monthRows) renderIncomeMonthRow(monthList, row);
+
+    const removedIncomes = state.monthlyControlItems.filter(item =>
+      item.month_start === monthStart && item.is_skipped && item.transaction_type === 'income');
+    const restoreButton = document.getElementById('income-restore-removed');
+    if (restoreButton) {
+      restoreButton.hidden = !removedIncomes.length;
+      restoreButton.textContent = removedIncomes.length === 1
+        ? 'Restaurar 1 receita removida deste mês'
+        : `Restaurar ${removedIncomes.length} receitas removidas deste mês`;
+    }
+  }
+
+  async function restoreRemovedIncomeRows() {
+    const householdId = state.membership?.household_id;
+    if (!householdId) return;
+    const { error } = await supabase.from('monthly_control_items')
+      .update({ is_skipped: false, updated_at: new Date().toISOString() })
+      .eq('household_id', householdId)
+      .eq('month_start', state.controlMonthKey)
+      .eq('transaction_type', 'income')
+      .eq('is_skipped', true);
+    if (error) {
+      console.error('Could not restore removed incomes:', error.message);
+      showToast('Não foi possível restaurar as receitas removidas.');
+      return;
+    }
+    showToast('Receitas restauradas neste mês.');
+    await refreshControlState();
+  }
+
+  function renderIncomeTemplates() {
+    const container = document.getElementById('income-recurring-list');
+    if (!container) return;
+    container.replaceChildren();
+    const templates = state.recurringItems
+      .filter(item => item.transaction_type === 'income')
+      .sort((left, right) => Number(right.active) - Number(left.active)
+        || left.title.localeCompare(right.title, 'pt-BR'));
+    if (!templates.length) {
+      appendEmptyState(container, 'Nenhuma receita fixa cadastrada. Adicione abaixo e mantenha “Repetir todo mês” marcado.');
+      return;
+    }
+    for (const template of templates) {
+      const isVariable = incomeTemplateBehavior(template) === 'variable';
+      const generated = monthsGeneratedByTemplate(template.id);
+      const row = document.createElement('div');
+      row.className = 'list-item income-row';
+      const info = document.createElement('div');
+      info.className = 'info';
+      const title = document.createElement('div');
+      title.className = 'title';
+      title.textContent = template.title;
+      const tags = document.createElement('div');
+      tags.className = 'control-row-tags';
+      const behaviorTag = document.createElement('span');
+      behaviorTag.className = 'recurring-tag';
+      behaviorTag.textContent = isVariable ? 'Receita variável' : 'Receita fixa';
+      tags.append(behaviorTag);
+      if (!template.active) {
+        const paused = document.createElement('span');
+        paused.className = 'recurring-tag paused';
+        paused.textContent = 'Repetição parada';
+        tags.append(paused);
+      }
+      const subtitle = document.createElement('div');
+      subtitle.className = 'subtitle';
+      subtitle.textContent = [
+        isVariable
+          ? 'Valor definido a cada mês'
+          : template.amount_cents == null ? 'Valor pendente' : formatMoney(Number(template.amount_cents)),
+        template.starts_month ? `desde ${formatMonthKey(template.starts_month)}` : null,
+        generated.length
+          ? `${generated.length} ${generated.length === 1 ? 'mês gerado' : 'meses gerados'}`
+          : 'ainda sem meses'
+      ].filter(Boolean).join(' · ');
+      info.append(title, tags, subtitle);
+
+      if (!isVariable) {
+        const amountInput = document.createElement('input');
+        amountInput.className = 'form-input';
+        amountInput.inputMode = 'decimal';
+        amountInput.placeholder = 'Valor mensal';
+        amountInput.value = template.amount_cents == null
+          ? ''
+          : (Number(template.amount_cents) / 100).toFixed(2).replace('.', ',');
+        amountInput.setAttribute('aria-label', `Valor mensal de ${template.title}`);
+        const saveAmount = document.createElement('button');
+        saveAmount.className = 'recurring-amount-save';
+        saveAmount.type = 'button';
+        saveAmount.textContent = 'Salvar valor';
+        saveAmount.addEventListener('click', () => fillRecurringAmount(template, amountInput.value, saveAmount));
+        info.append(amountInput, saveAmount);
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'income-row-actions';
+      const behaviorButton = document.createElement('button');
+      behaviorButton.type = 'button';
+      behaviorButton.textContent = isVariable ? 'Marcar como fixa' : 'Marcar como variável';
+      behaviorButton.addEventListener('click', () => toggleRecurringAmountBehavior(template));
+      actions.append(behaviorButton);
+      if (template.active) {
+        const stop = document.createElement('button');
+        stop.type = 'button';
+        stop.textContent = 'Parar de repetir';
+        stop.addEventListener('click', () => toggleRecurringActive(template));
+        actions.append(stop);
+      } else {
+        const resume = document.createElement('button');
+        resume.type = 'button';
+        resume.textContent = 'Reativar repetição';
+        resume.addEventListener('click', () => toggleRecurringActive(template));
+        actions.append(resume);
+      }
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'danger';
+      remove.textContent = 'Excluir receita';
+      remove.addEventListener('click', () => deleteRecurringItem(template));
+      actions.append(remove);
+      info.append(actions);
+      row.append(info);
+      container.append(row);
+    }
+  }
+
+  function renderIncomeMonthRow(container, monthRow) {
+    const template = state.recurringItems.find(item => item.id === monthRow.recurring_item_id);
+    const behavior = incomeRowBehavior(monthRow);
+    const row = document.createElement('div');
+    row.className = 'list-item income-row';
+    const info = document.createElement('div');
+    info.className = 'info';
+    const title = document.createElement('div');
+    title.className = 'title';
+    title.textContent = monthRow.item_name;
+    const tags = document.createElement('div');
+    tags.className = 'control-row-tags';
+    const tag = document.createElement('span');
+    tag.className = 'recurring-tag';
+    tag.textContent = !template
+      ? 'Avulsa deste mês'
+      : behavior === 'fixed'
+        ? 'Fixa · repete todo mês'
+        : 'Variável · valor do mês';
+    tags.append(tag);
+    if (template && !template.active) {
+      const paused = document.createElement('span');
+      paused.className = 'recurring-tag paused';
+      paused.textContent = 'Último mês';
+      tags.append(paused);
+    }
+    info.append(title, tags);
+    const actions = document.createElement('div');
+    actions.className = 'income-row-actions';
+    const adjust = document.createElement('button');
+    adjust.type = 'button';
+    adjust.textContent = 'Ajustar';
+    adjust.addEventListener('click', () => openControlItemDialog(monthRow));
+    actions.append(adjust);
+    if (template) {
+      const stop = document.createElement('button');
+      stop.type = 'button';
+      stop.textContent = 'Parar de repetir';
+      stop.addEventListener('click', () => toggleRecurringActive(template));
+      actions.append(stop);
+    }
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'danger';
+    remove.textContent = template ? 'Remover deste mês' : 'Excluir';
+    remove.addEventListener('click', () => removeIncomeMonthRow(monthRow));
+    actions.append(remove);
+    info.append(actions);
+
+    const amount = document.createElement('div');
+    amount.className = 'income-row-value';
+    amount.textContent = monthRow.amount_cents == null
+      ? 'Definir'
+      : formatMoney(Number(monthRow.amount_cents));
+    row.append(info, amount);
+    container.append(row);
+  }
+
+  async function removeIncomeMonthRow(monthRow) {
+    const template = state.recurringItems.find(item => item.id === monthRow.recurring_item_id);
+    const message = template
+      ? `Remover "${monthRow.item_name}" somente deste mês? A receita continua nos outros meses. Para encerrar, use "Parar de repetir".`
+      : `Excluir "${monthRow.item_name}" deste mês?`;
+    if (!window.confirm(message)) return;
+    const householdId = state.membership.household_id;
+    const { error } = template
+      ? await supabase.from('monthly_control_items')
+        .update({ is_skipped: true, updated_at: new Date().toISOString() })
+        .eq('id', monthRow.id)
+        .eq('household_id', householdId)
+      : await supabase.from('monthly_control_items')
+        .delete()
+        .eq('id', monthRow.id)
+        .eq('household_id', householdId);
+    if (error) {
+      console.error('Could not remove income row:', error.message);
+      showToast('Não foi possível remover esta receita.');
+      return;
+    }
+    showToast(template
+      ? 'Receita removida deste mês; ela continua nos outros meses.'
+      : 'Receita excluída.');
+    await loadHouseholdData();
+  }
+
   function renderFinancialData() {
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -4657,6 +5019,7 @@ if (!config?.url || !config?.publishableKey) {
       .sort((a, b) => b.transaction_date.localeCompare(a.transaction_date));
     renderTransactions(document.getElementById('all-transactions'), recentEntries);
     updateCharts(insightsTransactions);
+    renderIncomePanel();
   }
 
   function allCardStatementEntries() {
