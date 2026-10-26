@@ -1,33 +1,74 @@
-const CATEGORY_RULES = [
-  { match: /\b(padaria|panificadora|padoca|pao)\b/, category: 'Alimentação', subcategory: 'Padaria' },
-  { match: /\b(mercado|supermercado|hortifruti|atacadao|assai|carrefour)\b/, category: 'Alimentação', subcategory: 'Feira' },
-  { match: /\b(farmacia|drogaria|drogasil|droga raia|pacheco)\b/, category: 'Saúde', subcategory: 'Farmácia' },
-  { match: /\b(creche|escola|colegio|faculdade|universidade|curso)\b/, category: 'Família e educação' },
-  { match: /\b(posto|combustivel|shell|ipiranga|petrobras)\b/, category: 'Transporte', subcategory: 'Combustível' },
-  { match: /\b(netflix|spotify|disney|max|prime video|youtube premium)\b/, category: 'Assinaturas', subcategory: 'Streaming' },
-  { match: /\b(conta de agua|saneamento|sabesp)\b/, category: 'Moradia', subcategory: 'Conta de água' },
-  { match: /\b(conta de energia|energia eletrica|enel|cpfl|cemig)\b/, category: 'Moradia', subcategory: 'Conta de energia' },
-  { match: /\b(ifood|restaurante|lanchonete|pizzaria|burger king|mcdonald)\b/, category: 'Lazer', subcategory: 'Lanches' }
+/**
+ * Contextos que aparecem nas faturas de cartão (padaria, mercado, açougue,
+ * farmácia, oficina, streaming…). A primeira regra que casa vence, então as
+ * mais específicas ficam primeiro. `group` é o plano B de classificação quando
+ * a casa ainda não cadastrou a categoria/subcategoria correspondente.
+ */
+const MERCHANT_RULES = [
+  { match: /\b(netflix|spotify|disney|hbo|prime video|paramount|apple tv|globoplay|deezer|youtube|crunchyroll|chatgpt|openai|icloud|google one|adobe|microsoft 365|office 365|canva|duolingo)\b/, category: 'Assinaturas', subcategory: 'Streaming', group: 'fixed' },
+  { match: /\b(banda larga|fibra|vivo fibra|claro net|oi fibra|algar|internet)\b/, category: 'Serviços', subcategory: 'Internet', group: 'fixed' },
+  { match: /\b(recarga|recarregue|tim|vivo|claro|nextel)\b/, category: 'Comunicação', subcategory: 'Recarga de celular', group: 'fixed' },
+  { match: /\b(sabesp|copasa|sanepar|cedae|embasa|cagece|saneamento|conta de agua|aguas)\b/, category: 'Moradia', subcategory: 'Conta de água', group: 'fixed' },
+  { match: /\b(enel|cpfl|cemig|equatorial|coelba|celpe|energisa|energia eletrica|conta de luz)\b/, category: 'Moradia', subcategory: 'Conta de energia', group: 'fixed' },
+  { match: /\b(comgas|gas encanado|gas natural)\b/, category: 'Moradia', subcategory: null, group: 'fixed' },
+  { match: /\b(aluguel|condominio|iptu|imobiliaria)\b/, category: 'Moradia', subcategory: null, group: 'fixed' },
+  { match: /\b(farmacia|farmacias|drogaria|drogarias|drogasil|droga raia|droga sao paulo|pacheco|pague menos|ultrafarma|nissei|panvel)\b/, category: 'Saúde', subcategory: 'Farmácia', group: 'variable' },
+  { match: /\b(clinica|laboratorio|diagnostico|exame|exames|consulta|dentista|odonto|medico|medicos|hospital|fisioterapia|psicolog|terapia)\b/, category: 'Saúde', subcategory: 'Consultas', group: 'variable' },
+  { match: /\b(padaria|panificadora|panificacao|padoca|confeitaria|pao de mel|pao quente|doceria|bolos)\b/, category: 'Alimentação', subcategory: 'Padaria', group: 'variable' },
+  { match: /\b(acougue|frigorifico|peixaria|pescados|casa de carnes|carnes|suinos|bovinos|aves)\b/, category: 'Alimentação', subcategory: 'Açougue', group: 'variable' },
+  { match: /\b(hortifruti|hortifrutigranjeiro|sacolao|quitanda|feira|horta|frutas|verduras|legumes)\b/, category: 'Alimentação', subcategory: 'Feira', group: 'variable' },
+  { match: /\b(mercado|supermercado|hipermercado|minimercado|atacadao|assai|carrefour|extra|pao de acucar|guanabara|prezunic|zona sul|mambo|sonda|bistek|angeloni|condor|makro|sam s club|walmart|bretas|supermercados)\b/, category: 'Alimentação', subcategory: 'Mercado', group: 'variable' },
+  { match: /\b(ifood|rappi|uber eats|delivery|restaurante|lanchonete|pizzaria|hamburguer|burger|mcdonald|subway|habibs|giraffas|outback|sushi|churrascaria|cafeteria|cafe|sorveteria|acai)\b/, category: 'Lazer', subcategory: 'Lanches', group: 'leisure' },
+  { match: /\b(academia|smart fit|bluefit|selfit|pilates|crossfit|personal trainer)\b/, category: 'Saúde', subcategory: null, group: 'fixed' },
+  { match: /\b(posto|combustivel|gasolina|etanol|alcool|diesel|shell|ipiranga|petrobras|bandeirante|auto posto)\b/, category: 'Transporte', subcategory: 'Combustível', group: 'variable' },
+  { match: /\b(oficina|auto center|autocenter|mecanica|borracharia|pneu|pneus|alinhamento|balanceamento|revisao|concessionaria|auto pecas|autopecas|retifica|lubrificantes|oleo)\b/, category: 'Transporte', subcategory: 'Oficina', group: 'variable' },
+  { match: /\b(uber|99app|99 pop|cabify|taxi|onibus|metro|bilhete unico|pedagio|estacionamento|sem parar|veloe|conectcar)\b/, category: 'Transporte', subcategory: null, group: 'variable' },
+  { match: /\b(creche|bercario|escola|colegio|educacao infantil|maternal)\b/, category: 'Família e educação', subcategory: 'Creche', group: 'fixed' },
+  { match: /\b(faculdade|universidade|unip|estacio|anhanguera|uninove|unicesumar|graduacao|pos graduacao)\b/, category: 'Família e educação', subcategory: 'Faculdade', group: 'fixed' },
+  { match: /\b(curso|cursos|idiomas|ingles|espanhol|alura|udemy|coursera|hotmart)\b/, category: 'Família e educação', subcategory: null, group: 'variable' },
+  { match: /\b(petshop|pet shop|petz|cobasi|veterinario|veterinaria|banho e tosa|racao)\b/, category: 'Pets', subcategory: null, group: 'variable' },
+  { match: /\b(cinema|cinemark|cinepolis|teatro|show|ingresso|museu|parque|zoologico|playstation|xbox|steam)\b/, category: 'Lazer', subcategory: 'Passeios', group: 'leisure' },
+  { match: /\b(conserto|reparo|manutencao|reforma|obra|encanador|eletricista|chaveiro|dedetizadora|vidraceiro|serralheria)\b/, category: 'Outros', subcategory: null, group: 'emergency' }
 ];
 
-export function classifyCardPurchase(title, categories) {
-  const normalizedTitle = normalize(title);
-  const rule = CATEGORY_RULES.find(candidate => candidate.match.test(normalizedTitle));
-  if (!rule) return null;
+const FALLBACK_CLASSIFICATION = {
+  category: 'Outros',
+  subcategory: null,
+  budget_group: 'variable',
+  matched: false
+};
 
-  const matchingCategories = categories.filter(item =>
-    item.transaction_type === 'expense' && normalize(item.category) === normalize(rule.category));
-  if (!matchingCategories.length) return null;
+/**
+ * Classifica uma compra da fatura em categoria/subcategoria legíveis.
+ * Nunca devolve categoria vazia: sem correspondência, o lançamento vai para
+ * "Outros" com `matched: false` para a tela de importação pedir revisão.
+ */
+export function classifyCardPurchase(title, categories = []) {
+  const normalizedTitle = normalize(String(title ?? ''));
+  const expenseCategories = (categories ?? []).filter(item => item?.transaction_type === 'expense');
+  const rule = MERCHANT_RULES.find(candidate => candidate.match.test(normalizedTitle));
+  if (!rule) return { ...FALLBACK_CLASSIFICATION };
 
-  const subcategory = rule.subcategory
-    ? matchingCategories.find(item => normalize(item.subcategory) === normalize(rule.subcategory))
-    : matchingCategories.find(item => /\b(creche|escola|colegio|curso)\b/.test(normalizedTitle)
-      ? normalize(item.subcategory) === 'creche'
-      : normalize(item.subcategory) === 'faculdade');
+  const wantedCategory = normalize(rule.category);
+  const sameCategory = expenseCategories.filter(item => normalize(item.category) === wantedCategory);
+  const exact = rule.subcategory
+    ? sameCategory.find(item => normalize(item.subcategory) === normalize(rule.subcategory))
+    : null;
+  if (exact) {
+    return {
+      category: exact.category,
+      subcategory: exact.subcategory,
+      budget_group: exact.budget_group ?? rule.group,
+      matched: true
+    };
+  }
+  // Sem a subcategoria cadastrada, mantém o contexto do estabelecimento e usa
+  // o nome canônico da categoria quando a casa já possui essa categoria.
   return {
-    category: rule.category,
-    subcategory: subcategory?.subcategory ?? null,
-    budget_group: subcategory?.budget_group ?? null
+    category: sameCategory[0]?.category ?? rule.category,
+    subcategory: rule.subcategory ?? null,
+    budget_group: rule.group,
+    matched: true
   };
 }
 

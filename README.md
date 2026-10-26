@@ -58,6 +58,15 @@ O app separa **competência** (a que mês o dinheiro pertence) da **data do lan�
 - **Mês de competência** na ficha de lançamento: escolha um mês específico para contas pagas antecipadamente ou atrasadas. O apontamento manual vence a virada. Para corrigir um lançamento que já existe, use o botão **Mês** na linha do item (tela Mês) e escolha a competência, ou volte para **Automático**;
 - **Pagamento de fatura** lançado no extrato (título começando por "Pagamento" e contendo "fatura") **não entra no resumo**: o total da fatura já é contado no mês de competência, então somar o pagamento contaria o mesmo dinheiro duas vezes. O lançamento continua no Extrato, marcado como *fora do resumo*.
 
+## Categorização das compras do cartão
+
+Cada compra da fatura é classificada pelo **contexto do estabelecimento**, não só pelo total da fatura: farmácia, padaria, mercado, açougue, feira, oficina, combustível, streaming, delivery, petshop, transporte e compras em geral. A classificação usa a categoria/subcategoria da casa quando ela existe e, quando não existe, mantém o nome do contexto (ex.: *Alimentação · Mercado*) com o grupo de orçamento sugerido.
+
+- Nenhuma compra fica com categoria vazia: sem correspondência, entra em **Outros** e a prévia da importação marca *Sem correspondência — usando Outros* para revisão;
+- Na prévia de importação é possível ajustar categoria, subcategoria e grupo de cada linha antes de salvar;
+- Faturas importadas antes desta classificação são reclassificadas automaticamente ao abrir o app (apenas linhas sem categoria e nunca pagamentos de fatura);
+- **Insights** mostra dois níveis: o KPI **Compras no cartão** (total comprado no mês de competência, incluindo parcelas) e o cartão **Cartão por categoria**, com valor e participação de cada contexto. O gráfico **Gastos por categoria** soma despesas do mês e compras do cartão, sem repetir o total da fatura no caixa.
+
 ## Duplicidade de lançamentos
 
 O app evita duplicar de duas formas:

@@ -409,6 +409,11 @@
     .progress-header .values { font-size: 13px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
     .progress-bar { height: 6px; background: var(--bg-secondary); border-radius: 3px; overflow: hidden; }
     .progress-fill { height: 100%; border-radius: 3px; transition: width 0.4s ease; }
+    .card-category-list .progress-item { padding: 10px 0; }
+    .card-category-list .progress-item:last-child { border-bottom: none; }
+    .card-category-list .progress-header { gap: 12px; }
+    .card-category-list .progress-header .name { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .card-category-list .progress-header .values { white-space: nowrap; }
 
     .screen { display: none; height: 100%; flex-direction: column; overflow: hidden; }
     .screen.active { display: flex; }
@@ -686,7 +691,7 @@
       }
       .desktop-grid .full { grid-column: 1 / -1; }
 
-      .kpi-grid { grid-template-columns: repeat(4, 1fr); }
+      .kpi-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
       .chart-container.tall { height: 280px; }
       .chart-container.donut { height: 260px; }
       .quick-actions { max-width: 480px; }
@@ -1246,6 +1251,7 @@
             <div class="kpi-card"><div class="kpi-label">Taxa de economia</div><div class="kpi-value positive" id="insight-saving-rate">0%</div><div class="kpi-sub" id="insight-saving-note">Sem lançamentos</div></div>
             <div class="kpi-card"><div class="kpi-label">Gasto médio/dia</div><div class="kpi-value" id="insight-daily-average">R$ 0,00</div><div class="kpi-trend" id="insight-daily-note">Sem lançamentos</div></div>
             <div class="kpi-card"><div class="kpi-label">Dias sem gastar</div><div class="kpi-value" id="insight-no-spend-days">—</div><div class="kpi-sub" id="insight-no-spend-note">Sem lançamentos</div></div>
+            <div class="kpi-card"><div class="kpi-label">Compras no cartão</div><div class="kpi-value" id="insight-card-total">R$ 0,00</div><div class="kpi-sub" id="insight-card-note">Sem compras importadas</div></div>
           </div>
         </div>
         <div class="desktop-grid">
@@ -1254,8 +1260,12 @@
             <div class="chart-container tall"><canvas id="chart-trend"></canvas></div>
           </div>
           <div class="chart-card">
-            <div class="chart-header"><div class="chart-title">Gastos por categoria</div></div>
+            <div class="chart-header"><div class="chart-title">Gastos por categoria</div><div class="chart-legend"><span>Inclui compras do cartão</span></div></div>
             <div class="chart-container donut"><canvas id="chart-categories"></canvas></div>
+          </div>
+          <div class="chart-card full">
+            <div class="chart-header"><div class="chart-title">Cartão por categoria</div><div class="chart-legend" id="card-category-summary">Sem compras importadas</div></div>
+            <div class="card-category-list" id="card-category-list"><div class="empty-state">Importe a fatura do cartão para ver o detalhamento por categoria.</div></div>
           </div>
           <div class="chart-card full">
             <div class="chart-header"><div class="chart-title">Evolução do saldo (6 meses)</div></div>

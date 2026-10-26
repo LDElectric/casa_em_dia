@@ -79,8 +79,11 @@ const DEFAULT_FINANCE_CATEGORIES = [
   ['expense', 'Profissional', 'Caixinha CREA', 'fixed'],
   ['expense', 'Profissional', 'Caixinha CRT', 'fixed'],
   ['expense', 'Alimentação', 'Feira', 'variable'],
+  ['expense', 'Alimentação', 'Mercado', 'variable'],
+  ['expense', 'Alimentação', 'Açougue', 'variable'],
   ['expense', 'Pets', 'Ração dos cachorros', 'fixed'],
   ['expense', 'Transporte', 'Combustível', 'variable'],
+  ['expense', 'Transporte', 'Oficina', 'variable'],
   ['expense', 'Alimentação', 'Padaria', 'variable'],
   ['expense', 'Alimentação', 'Água mineral', 'variable'],
   ['expense', 'Alimentação', 'Gás de cozinha', 'variable'],
@@ -859,7 +862,58 @@ if (!config?.url || !config?.publishableKey) {
     renderMonthlyControl();
     renderFinancialData();
     state.householdDataLoadedAt = Date.now();
+    void backfillCardCategories();
     return true;
+  }
+
+  /**
+   * Faturas importadas antes da classificação por contexto ficaram sem
+   * categoria e apareciam como "null" nos insights. Aqui elas são classificadas
+   * uma única vez por sessão; só linhas sem categoria são tocadas.
+   */
+  let cardCategoryBackfillHousehold = null;
+  async function backfillCardCategories() {
+    const householdId = state.membership?.household_id;
+    if (!householdId || cardCategoryBackfillHousehold === householdId) return;
+    cardCategoryBackfillHousehold = householdId;
+    const pendingItems = state.cardStatementItems.filter(item =>
+      !cleanCategoryText(item.category) && !isCardPayment(item.title));
+    if (!pendingItems.length) return;
+
+    const groups = new Map();
+    for (const item of pendingItems) {
+      const suggestion = classifyCardPurchase(item.title, state.financeCategories);
+      const key = `${suggestion.category}|${suggestion.subcategory ?? ''}|${suggestion.budget_group}`;
+      const group = groups.get(key) ?? { ...suggestion, ids: [] };
+      group.ids.push(item.id);
+      groups.set(key, group);
+    }
+
+    let updated = 0;
+    for (const group of groups.values()) {
+      for (let start = 0; start < group.ids.length; start += 100) {
+        const chunk = group.ids.slice(start, start + 100);
+        const { error } = await supabase.from('card_statement_items')
+          .update({
+            category: group.category,
+            subcategory: group.subcategory ?? null,
+            budget_group: group.budget_group ?? 'variable'
+          })
+          .in('id', chunk);
+        if (error) {
+          console.warn('Could not classify saved card statement items:', error.message);
+          continue;
+        }
+        updated += chunk.length;
+        for (const item of state.cardStatementItems) {
+          if (!chunk.includes(item.id)) continue;
+          item.category = group.category;
+          item.subcategory = group.subcategory ?? null;
+          item.budget_group = group.budget_group ?? 'variable';
+        }
+      }
+    }
+    if (updated) renderFinancialData();
   }
 
   /**
@@ -2549,22 +2603,25 @@ if (!config?.url || !config?.publishableKey) {
         totalSource,
         rows: rowsWithKeys.map(row => {
           const existingItem = categoryBySource.get(row.source_key);
-          const automaticClassification = existingItem
+          const savedItem = existingItem && cleanCategoryText(existingItem.category) ? existingItem : null;
+          const automaticClassification = savedItem
             ? null
             : classifyCardPurchase(row.title, state.financeCategories);
           return {
             ...row,
-            classification_source: existingItem ? 'saved' : automaticClassification ? 'automatic' : 'manual',
+            classification_source: savedItem
+              ? 'saved'
+              : automaticClassification.matched ? 'automatic' : 'guess',
             cardholder_label: row.cardholder_label || existingItem?.cardholder_label || null,
             ...(automaticClassification && {
               category: automaticClassification.category,
               subcategory: automaticClassification.subcategory,
               budget_group: automaticClassification.budget_group
             }),
-            ...(existingItem && {
-              category: existingItem.category,
-              subcategory: existingItem.subcategory,
-              budget_group: existingItem.budget_group
+            ...(savedItem && {
+              category: savedItem.category,
+              subcategory: savedItem.subcategory,
+              budget_group: savedItem.budget_group
             })
           };
         })
@@ -2831,12 +2888,19 @@ if (!config?.url || !config?.publishableKey) {
       });
       const category = createCategorySelect(item.category, item.subcategory);
       const classification = document.createElement('span');
+      const markManual = () => {
+        item.classification_source = 'manual';
+        classification.className = 'statement-classification';
+        classification.textContent = 'Classificação sua';
+      };
       classification.className = item.category ? 'statement-classification' : 'statement-classification needs-review';
-      classification.textContent = !item.category
+      classification.textContent = !cleanCategoryText(item.category)
         ? 'Revisar categoria'
         : item.classification_source === 'automatic'
           ? 'Sugestão automática — confira'
-          : item.classification_source === 'saved' ? 'Classificação salva' : 'Classificada';
+          : item.classification_source === 'guess'
+            ? 'Sem correspondência — usando Outros'
+            : item.classification_source === 'saved' ? 'Classificação salva' : 'Classificada';
       const group = document.createElement('select');
       group.className = 'form-input';
       for (const [value, label] of [
@@ -2850,12 +2914,14 @@ if (!config?.url || !config?.publishableKey) {
         fillSubcategorySelect(category.categorySelect.value, category.subcategorySelect);
       });
       category.subcategorySelect.addEventListener('change', () => {
-        item.category = category.categorySelect.value || null;
-        item.subcategory = category.subcategorySelect.value || null;
+        item.category = cleanCategoryText(category.categorySelect.value) || null;
+        item.subcategory = cleanCategoryText(category.subcategorySelect.value) || null;
+        markManual();
       });
       category.categorySelect.addEventListener('change', () => {
-        item.category = category.categorySelect.value || null;
+        item.category = cleanCategoryText(category.categorySelect.value) || null;
         item.subcategory = null;
+        markManual();
       });
       group.addEventListener('change', () => { item.budget_group = group.value; });
       info.append(title, subtitle, classification, cardholder,
@@ -2867,29 +2933,36 @@ if (!config?.url || !config?.publishableKey) {
   }
 
   function createCategorySelect(selectedCategory, selectedSubcategory) {
+    const selected = cleanCategoryText(selectedCategory);
     const categorySelect = document.createElement('select');
     categorySelect.className = 'form-input';
     categorySelect.add(new Option('Sem categoria ainda', ''));
     const expenseCategories = [...new Set(state.financeCategories
       .filter(item => item.transaction_type === 'expense')
-      .map(item => item.category))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+      .map(item => item.category))];
+    // A sugestão automática pode trazer uma categoria que a casa ainda não
+    // cadastrou (ex.: Açougue, Oficina); ela precisa aparecer no seletor.
+    if (selected && !expenseCategories.includes(selected)) expenseCategories.push(selected);
+    expenseCategories.sort((a, b) => a.localeCompare(b, 'pt-BR'));
     for (const category of expenseCategories) categorySelect.add(new Option(category, category));
-    categorySelect.value = selectedCategory || '';
+    categorySelect.value = selected;
 
     const subcategorySelect = document.createElement('select');
     subcategorySelect.className = 'form-input';
-    fillSubcategorySelect(categorySelect.value, subcategorySelect);
-    subcategorySelect.value = selectedSubcategory || '';
+    fillSubcategorySelect(categorySelect.value, subcategorySelect, selectedSubcategory);
+    subcategorySelect.value = cleanCategoryText(selectedSubcategory);
     return { categorySelect, subcategorySelect };
   }
 
-  function fillSubcategorySelect(category, select) {
+  function fillSubcategorySelect(category, select, extraSubcategory = null) {
     const current = select.value;
     select.replaceChildren(new Option('Sem subcategoria ainda', ''));
-    for (const item of state.financeCategories.filter(categoryItem =>
-      categoryItem.transaction_type === 'expense' && categoryItem.category === category)) {
-      select.add(new Option(item.subcategory, item.subcategory));
-    }
+    const subcategories = state.financeCategories
+      .filter(categoryItem => categoryItem.transaction_type === 'expense' && categoryItem.category === category)
+      .map(categoryItem => categoryItem.subcategory);
+    const extra = cleanCategoryText(extraSubcategory);
+    if (extra && !subcategories.includes(extra)) subcategories.push(extra);
+    for (const subcategory of subcategories) select.add(new Option(subcategory, subcategory));
     select.value = [...select.options].some(option => option.value === current) ? current : '';
   }
 
@@ -3012,7 +3085,9 @@ if (!config?.url || !config?.publishableKey) {
         detailSubtitle.className = 'subtitle';
         detailSubtitle.textContent = [
           item.cardholder_label,
-          item.category ? `${item.category} · ${item.subcategory}` : 'Sem categoria',
+          categoryLabelFor(item) === 'Sem categoria'
+            ? 'Sem categoria'
+            : [cleanCategoryText(item.category), cleanCategoryText(item.subcategory)].filter(Boolean).join(' · '),
           item.installment_number ? `${item.installment_number}/${item.installment_total}` : null
         ].filter(Boolean).join(' · ');
         const category = createCategorySelect(item.category, item.subcategory);
@@ -3139,6 +3214,8 @@ if (!config?.url || !config?.publishableKey) {
             amount_cents: Number(item.amount_cents),
             installment_number: number,
             installment_total: item.installment_total,
+            category: item.category ?? null,
+            subcategory: item.subcategory ?? null,
             budget_group: item.budget_group,
             transaction_type: 'expense',
             payment_method: 'credit',
@@ -3709,7 +3786,7 @@ if (!config?.url || !config?.publishableKey) {
           ? ` · Parcela ${item.installment_number}/${item.installment_total}`
           : '';
         const forecast = item.is_forecast ? ' · Prevista' : '';
-        const origin = item.card_label ?? item.category;
+        const origin = item.card_label ?? categoryLabelFor(item);
         const competenceTag = item.competence_month
           ? ` · competência ${formatMonthKey(item.competence_month)}`
           : '';
@@ -4027,7 +4104,7 @@ if (!config?.url || !config?.publishableKey) {
     }
     const categoryTotals = new Map();
     for (const item of entries) {
-      const cat = item.category || 'Outros';
+      const cat = categoryLabelFor(item);
       const cur = categoryTotals.get(cat) || { total: 0, count: 0 };
       cur.total += Number(item.amount_cents || 0);
       cur.count += 1;
@@ -4507,6 +4584,19 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('insight-no-spend-note').textContent =
       insightsTransactions.length ? 'No mês selecionado' : 'Sem lançamentos';
 
+    const cardEntries = insightsTransactions.filter(item => item.source_item_id && !item.is_forecast);
+    const cardEntriesTotal = cardEntries.reduce((sum, item) => sum + Number(item.amount_cents), 0);
+    const cardCategories = cardCategoryTotals(cardEntries);
+    const cardTotalElement = document.getElementById('insight-card-total');
+    if (cardTotalElement) cardTotalElement.textContent = formatMoney(cardEntriesTotal);
+    const cardNoteElement = document.getElementById('insight-card-note');
+    if (cardNoteElement) {
+      cardNoteElement.textContent = cardEntries.length
+        ? `${cardEntries.length} ${cardEntries.length === 1 ? 'compra' : 'compras'} em ${cardCategories.length} ${cardCategories.length === 1 ? 'categoria' : 'categorias'}`
+        : 'Sem compras importadas';
+    }
+    renderCardCategoryBreakdown(cardEntries);
+
     const statementMonthKey = state.transactionsMonthKey ?? state.controlMonthKey?.slice(0, 7) ?? currentMonth;
     const statementMonthDate = new Date(`${statementMonthKey.slice(0, 7)}-01T12:00:00`);
     document.getElementById('transaction-month-label').textContent =
@@ -4701,7 +4791,7 @@ if (!config?.url || !config?.publishableKey) {
       row.className = 'list-item transaction-row';
       const icon = document.createElement('div');
       icon.className = 'icon';
-      icon.textContent = categoryIcons[item.category] ?? '📦';
+      icon.textContent = categoryIcons[categoryLabelFor(item)] ?? '📦';
       icon.style.background = 'var(--accent-soft)';
       icon.style.color = 'var(--accent)';
       const info = document.createElement('div');
@@ -4721,7 +4811,7 @@ if (!config?.url || !config?.publishableKey) {
         ? ` · competência ${formatMonthKey(item.competence_month)}`
         : '';
       const cardPaymentLabel = isCardPaymentTransaction(item) ? ' · pagamento de fatura (fora do resumo)' : '';
-      subtitle.textContent = `${dateLabel} · ${item.category ?? 'Sem categoria'}${subcategory}${cardLabel}${competenceLabel}${cardPaymentLabel}`;
+      subtitle.textContent = `${dateLabel} · ${categoryLabelFor(item)}${subcategory}${cardLabel}${competenceLabel}${cardPaymentLabel}`;
       info.append(title, subtitle);
       const avatar = document.createElement('div');
       avatar.className = 'transaction-avatar';
@@ -4764,6 +4854,67 @@ if (!config?.url || !config?.publishableKey) {
       .map(part => Array.from(part)[0].toLocaleUpperCase('pt-BR')).join('');
   }
 
+  /**
+   * Detalhamento das compras do cartão por categoria/subcategoria.
+   * É o KPI de "onde o dinheiro do cartão foi gasto"; o total da fatura
+   * continua sendo o KPI de caixa do mês.
+   */
+  function cardCategoryTotals(cardEntries) {
+    const totals = new Map();
+    for (const item of cardEntries) {
+      const category = categoryLabelFor(item);
+      const subcategory = cleanCategoryText(item.subcategory);
+      const label = subcategory ? `${category} · ${subcategory}` : category;
+      const entry = totals.get(label) ?? { label, amount: 0, count: 0 };
+      entry.amount += Number(item.amount_cents);
+      entry.count += 1;
+      totals.set(label, entry);
+    }
+    return [...totals.values()].sort((left, right) => right.amount - left.amount);
+  }
+
+  function renderCardCategoryBreakdown(cardEntries) {
+    const container = document.getElementById('card-category-list');
+    if (!container) return;
+    const totals = cardCategoryTotals(cardEntries);
+    const total = totals.reduce((sum, item) => sum + item.amount, 0);
+    const summary = document.getElementById('card-category-summary');
+    if (summary) {
+      summary.textContent = total
+        ? `${formatMoney(total)} · ${totals.length} ${totals.length === 1 ? 'categoria' : 'categorias'}`
+        : 'Sem compras importadas neste mês';
+    }
+    container.replaceChildren();
+    if (!totals.length) {
+      appendEmptyState(container, 'Importe a fatura do cartão para ver o detalhamento por categoria.');
+      return;
+    }
+    const colors = ['var(--accent)', 'var(--green)', 'var(--orange)', 'var(--purple)', 'var(--red)'];
+    totals.slice(0, 10).forEach((item, index) => {
+      const share = total ? Math.round(item.amount / total * 100) : 0;
+      const row = document.createElement('div');
+      row.className = 'progress-item';
+      const header = document.createElement('div');
+      header.className = 'progress-header';
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = item.label;
+      const values = document.createElement('span');
+      values.className = 'values';
+      values.textContent = `${formatMoney(item.amount)} · ${share}%`;
+      header.append(name, values);
+      const bar = document.createElement('div');
+      bar.className = 'progress-bar';
+      const fill = document.createElement('div');
+      fill.className = 'progress-fill';
+      fill.style.width = `${Math.max(4, share)}%`;
+      fill.style.background = colors[index % colors.length];
+      bar.append(fill);
+      row.append(header, bar);
+      container.append(row);
+    });
+  }
+
   function updateCharts(currentTransactions) {
     const monthly = Array.from({ length: 6 }, (_, index) => {
       const date = new Date();
@@ -4788,11 +4939,19 @@ if (!config?.url || !config?.publishableKey) {
     });
     const categories = new Map();
     for (const item of currentTransactions) {
-      if (item.transaction_type === 'expense') {
-        categories.set(item.category, (categories.get(item.category) ?? 0) + Number(item.amount_cents) / 100);
-      }
+      if (item.transaction_type !== 'expense') continue;
+      const label = categoryLabelFor(item);
+      categories.set(label, (categories.get(label) ?? 0) + Number(item.amount_cents) / 100);
     }
-    window.householdChartData = { monthly, categories: [...categories.entries()] };
+    const sortedCategories = [...categories.entries()].sort((left, right) => right[1] - left[1]);
+    // Muitas categorias deixam o gráfico e a legenda ilegíveis no celular.
+    const chartCategoriesData = sortedCategories.length > 8
+      ? [
+        ...sortedCategories.slice(0, 8),
+        ['Demais categorias', sortedCategories.slice(8).reduce((sum, [, value]) => sum + value, 0)]
+      ]
+      : sortedCategories;
+    window.householdChartData = { monthly, categories: chartCategoriesData };
     window.dispatchEvent(new CustomEvent('household-data-loaded', {
       detail: window.householdChartData
     }));
@@ -4868,6 +5027,18 @@ if (!config?.url || !config?.publishableKey) {
     }).format(cents / 100);
   }
 
+  /** Trata vazio, "null" e "undefined" como ausência de categoria. */
+  function cleanCategoryText(value) {
+    const text = String(value ?? '').trim();
+    if (!text) return '';
+    const normalized = text.toLocaleLowerCase('pt-BR');
+    return normalized === 'null' || normalized === 'undefined' ? '' : text;
+  }
+
+  function categoryLabelFor(item) {
+    return cleanCategoryText(item?.category) || cleanCategoryText(item?.subcategory) || 'Sem categoria';
+  }
+
   function localDate(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   }
@@ -4898,7 +5069,17 @@ const categoryIcons = {
   Cartão: '💳',
   Assinaturas: '📺',
   Contas: '⚡',
+  Saúde: '💊',
+  Pets: '🐾',
+  'Família e educação': '🎓',
+  Serviços: '🔧',
+  Profissional: '💼',
+  Comunicação: '📱',
+  Lazer: '🎉',
   Salário: '💰',
+  Benefícios: '🎁',
+  Trabalho: '💼',
+  'Sem categoria': '🏷️',
   Outros: '📦'
 };
 
@@ -4918,8 +5099,14 @@ window.addEventListener('household-data-loaded', event => {
     window.chartTrend.update();
   }
   if (window.chartCategories) {
-    window.chartCategories.data.labels = categoryLabels.length ? categoryLabels : ['Sem lançamentos'];
+    const chartColors = ['--accent', '--green', '--red', '--orange', '--purple', '--text-tertiary']
+      .map(name => getComputedStyle(document.documentElement).getPropertyValue(name).trim())
+      .filter(Boolean);
+    const labels = categoryLabels.length ? categoryLabels : ['Sem lançamentos'];
+    window.chartCategories.data.labels = labels;
     window.chartCategories.data.datasets[0].data = categoryData.length ? categoryData : [0];
+    window.chartCategories.data.datasets[0].backgroundColor = labels
+      .map((_, index) => chartColors[index % chartColors.length] ?? '#8e8e93');
     window.chartCategories.update();
   }
   if (window.chartMonthly) {

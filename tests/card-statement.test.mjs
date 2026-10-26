@@ -18,14 +18,52 @@ const categories = [
   { transaction_type: 'expense', category: 'Família e educação', subcategory: 'Creche', budget_group: 'fixed' }
 ];
 
-test('classifies known merchants only when the matching household category exists', () => {
+test('classifies merchants by card statement context without leaving null categories', () => {
   assert.deepEqual(classifyCardPurchase('PADARIA PÃO QUENTE', categories), {
     category: 'Alimentação',
     subcategory: 'Padaria',
-    budget_group: 'variable'
+    budget_group: 'variable',
+    matched: true
   });
-  assert.equal(classifyCardPurchase('LOJA SEM CATEGORIA', categories), null);
+  assert.deepEqual(classifyCardPurchase('LOJA SEM CATEGORIA', categories), {
+    category: 'Outros',
+    subcategory: null,
+    budget_group: 'variable',
+    matched: false
+  });
   assert.equal(classifyCardPurchase('DROGARIA CENTRAL', categories)?.subcategory, 'Farmácia');
+});
+
+test('covers supermarket, butcher, workshop and streaming contexts', () => {
+  assert.deepEqual(classifyCardPurchase('SUPERMERCADO BOA COMPRA', categories), {
+    category: 'Alimentação',
+    subcategory: 'Mercado',
+    budget_group: 'variable',
+    matched: true
+  });
+  assert.equal(classifyCardPurchase('ACOUGUE DO ZE', categories)?.subcategory, 'Açougue');
+  assert.deepEqual(classifyCardPurchase('AUTO CENTER SILVA', categories), {
+    category: 'Transporte',
+    subcategory: 'Oficina',
+    budget_group: 'variable',
+    matched: true
+  });
+  assert.deepEqual(classifyCardPurchase('NETFLIX.COM', categories), {
+    category: 'Assinaturas',
+    subcategory: 'Streaming',
+    budget_group: 'fixed',
+    matched: true
+  });
+});
+
+test('falls back to Outros when the household has no matching categories', () => {
+  assert.deepEqual(classifyCardPurchase('PADARIA PÃO QUENTE', []), {
+    category: 'Alimentação',
+    subcategory: 'Padaria',
+    budget_group: 'variable',
+    matched: true
+  });
+  assert.equal(classifyCardPurchase('', []).category, 'Outros');
 });
 
 test('extracts dated purchases and installment details from PDF text lines', () => {
