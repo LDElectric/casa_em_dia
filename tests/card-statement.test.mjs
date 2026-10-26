@@ -88,6 +88,14 @@ test('avoids false positives on marketplaces and bank fee descriptions', () => {
   assert.equal(classifyCardPurchase('PREVISAO PAGAMENTO', [])?.matched, false);
 });
 
+test('does not guess from generic words that do not state the business type', () => {
+  // "Varejão São Luiz" é uma farmácia: termo genérico não deve virar mercado.
+  assert.equal(classifyCardPurchase('VAREJAO SAO LUIZ', [])?.matched, false);
+  assert.equal(classifyCardPurchase('POSTO DE SAUDE CENTRAL', [])?.matched, false);
+  assert.equal(classifyCardPurchase('MOTO G CAPA', [])?.matched, false);
+  assert.equal(classifyCardPurchase('EXTRA FARMA', [])?.subcategory, 'Farmácia');
+});
+
 test('falls back to Outros when the household has no matching categories', () => {
   assert.deepEqual(classifyCardPurchase('PADARIA PÃO QUENTE', []), {
     category: 'Alimentação',

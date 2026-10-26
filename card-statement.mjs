@@ -25,17 +25,20 @@ const MERCHANT_RULES = [
   { match: /\b(comgas|gas encanado|gas natural)\b/, category: 'Moradia', subcategory: null, group: 'fixed' },
   { match: /\b(aluguel|condominio|iptu|imobiliaria)\b/, category: 'Moradia', subcategory: null, group: 'fixed' },
   // Rede de supermercado é decidida antes da farmácia: "Supermercado Pague Menos" é mercado.
-  { match: /supermerc|hipermerc|minimerc|atacad|\bvarejao|assai|carrefour|guanabara|prezunic|zona sul|mamboo|sonda|bistek|angeloni|condor|makro|sam ?s club|walmart|bretas|pao de acucar/, category: 'Alimentação', subcategory: 'Mercado', group: 'variable' },
+  // Só nomes que dizem o ramo ou marcas com segmento claro. Termos genéricos
+  // como "varejão" ficam de fora: podem ser farmácia, mercado ou loja.
+  { match: /supermerc|hipermerc|minimerc|atacad|assai|carrefour|guanabara|prezunic|zona sul|mamboo|sonda|bistek|angeloni|condor|makro|sam ?s club|walmart|bretas|pao de acucar/, category: 'Alimentação', subcategory: 'Mercado', group: 'variable' },
   { match: /farma|pharma|drogari|drogasil|droga raia|droga sao paulo|pacheco|pague menos|nissei|panvel/, category: 'Saúde', subcategory: 'Farmácia', group: 'variable' },
-  { match: /clinic|laborator|diagnostic|\bexame|consulta|dentist|odonto|medic|hospital|fisioterap|psicolog|terapia/, category: 'Saúde', subcategory: 'Consultas', group: 'variable' },
+  { match: /clinic|laborator|diagnostic|\bexame|\bconsulta|dentist|odonto|\bmedic|hospital|fisioterap|psicolog|terapia/, category: 'Saúde', subcategory: 'Consultas', group: 'variable' },
   { match: /academia|smart ?fit|bluefit|selfit|\bmfit\b|pilates|crossfit|personal trainer|wellhub|gympass|totalpass|queima diaria/, category: 'Saúde', subcategory: null, group: 'fixed' },
   { match: /padari|panific|padoca|confeitar|pao de mel|pao quente|doceria|\bbolos\b/, category: 'Alimentação', subcategory: 'Padaria', group: 'variable' },
   { match: /acoug|frigorific|peixari|pescad|casa de carn|\bcarnes\b|suino|bovino/, category: 'Alimentação', subcategory: 'Açougue', group: 'variable' },
   { match: /hortifrut|sacolao|quitanda|\bfeira\b|\bhorta\b|frutas|verduras|legumes/, category: 'Alimentação', subcategory: 'Feira', group: 'variable' },
-  { match: /mercado|mercadinho|\bextra\b/, category: 'Alimentação', subcategory: 'Mercado', group: 'variable' },
+  { match: /mercado|mercadinho/, category: 'Alimentação', subcategory: 'Mercado', group: 'variable' },
   { match: /ifood|rappi|uber ?eats|delivery|restaurant|lanchonet|pizzari|\bpizza|hamburguer|hamburgu|burger|burguer|mcdonald|subway|habibs|giraffas|outback|sushi|churrascar|cafeteria|\bcafe\b|sorveter|acai|tapio|pastel|esfiha|marmita|\blanche\b|salgado|hot ?dog/, category: 'Lazer', subcategory: 'Lanches', group: 'leisure' },
-  { match: /(^| )posto|combustiv|gasolina|etanol|alcool|diesel|shell|ipiranga|petrobras|bandeirante/, category: 'Transporte', subcategory: 'Combustível', group: 'variable' },
-  { match: /\bmotos?\b|motocicleta|motopecas|moto ?pecas/, category: 'Transporte', subcategory: 'Peças de moto', group: 'variable' },
+  // "Posto de saúde" não é posto de combustível.
+  { match: /(^| )posto(?! de saude)|combustiv|gasolina|etanol|alcool|diesel|shell|ipiranga|petrobras|bandeirante/, category: 'Transporte', subcategory: 'Combustível', group: 'variable' },
+  { match: /\bmotos\b|motocicleta|motopecas|moto ?pecas/, category: 'Transporte', subcategory: 'Peças de moto', group: 'variable' },
   { match: /oficin|auto ?center|autocenter|mecanic|borrachar|\bpneus?\b|alinhament|balanceament|\brevisa|concessionari|auto ?pecas|autopecas|retific|lubrificant|\boleo\b/, category: 'Transporte', subcategory: 'Oficina', group: 'variable' },
   { match: /uber ?rides|uber ?trip|uber ?do ?brasil|\buber\b|99 ?(app|pop|food|taxi)|cabify|\btaxi|onibus|\bmetro\b|bilhete unico|pedagio|estacionament|sem parar|veloe|conectcar/, category: 'Transporte', subcategory: null, group: 'variable' },
   { match: /creche|bercario|escola|colegio|educacao infantil|maternal/, category: 'Família e educação', subcategory: 'Creche', group: 'fixed' },
