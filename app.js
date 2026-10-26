@@ -1349,10 +1349,10 @@ if (!config?.url || !config?.publishableKey) {
     const behavior = document.querySelector('#control-item-behavior .freq-btn.active')?.dataset.behavior ?? 'once';
     const note = document.getElementById('control-item-behavior-note');
     note.textContent = behavior === 'fixed'
-      ? 'Repete todo mês com este valor; mudanças valem para este mês e os seguintes.'
+      ? 'Fixa: repete todo mês com este mesmo valor; mudanças valem para este mês e os seguintes.'
       : behavior === 'variable'
-        ? 'Repete todo mês, mas o valor é preenchido em cada mês.'
-        : 'Lançamento só deste mês; a repetição é encerrada a partir daqui.';
+        ? 'Variável: o item repete todo mês, mas os meses seguintes começam sem valor para você preencher.'
+        : 'Avulsa: lançamento só deste mês; a repetição é encerrada a partir daqui.';
   }
 
   function openControlItemDialog(item) {
@@ -1499,11 +1499,18 @@ if (!config?.url || !config?.publishableKey) {
           incomeBehavior: transactionType === 'income' ? behavior : null
         });
         if (rowError) throw rowError;
+        // Fixa repete o valor; ao converter para variável os meses seguintes
+        // ficam em branco (só na conversão, para não apagar valores já digitados).
+        const previousBehavior = controlItemBehavior(item);
+        const futureAmount = behavior === 'fixed'
+          ? { amount_cents: amountCents }
+          : previousBehavior === 'variable' ? {} : { amount_cents: null };
         const { error: futureError } = await supabase.from('monthly_control_items')
           .update({
             item_name: name,
             control_group: controlGroup,
-            ...(behavior === 'fixed' ? { amount_cents: amountCents } : {}),
+            ...futureAmount,
+            ...(transactionType === 'income' ? { income_behavior: behavior } : {}),
             updated_at: new Date().toISOString()
           })
           .eq('recurring_item_id', templateId)
@@ -3700,9 +3707,27 @@ if (!config?.url || !config?.publishableKey) {
         return;
       }
     }
+    // Variável = cada mês começa sem valor: limpa dos meses futuros em diante,
+    // preservando o mês atual, que já pode ter valor lançado.
+    const cutoff = recurringCutoffMonthStart();
+    const amountPayload = nextBehavior === 'variable'
+      ? { amount_cents: null, updated_at: new Date().toISOString() }
+      : item.amount_cents != null
+        ? { amount_cents: Number(item.amount_cents), updated_at: new Date().toISOString() }
+        : null;
+    if (amountPayload) {
+      const { error: amountError } = await supabase.from('monthly_control_items')
+        .update(amountPayload)
+        .eq('recurring_item_id', item.id)
+        .gt('month_start', cutoff)
+        .eq('household_id', state.membership.household_id);
+      if (amountError) {
+        console.warn('Could not reset future amounts for the new behavior:', amountError.message);
+      }
+    }
     showToast(nextBehavior === 'fixed'
-      ? 'Item marcado como fixo.'
-      : 'Item marcado como variável.');
+      ? 'Item marcado como fixo: o valor passa a repetir todo mês.'
+      : 'Item marcado como variável: cada mês começa sem valor.');
     await loadHouseholdData();
   }
 
