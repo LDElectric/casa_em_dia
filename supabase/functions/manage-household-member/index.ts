@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 Deno.serve(async (request: Request) => {
   const requestOrigin = request.headers.get("Origin");
@@ -110,6 +110,45 @@ Deno.serve(async (request: Request) => {
     return jsonResponse({ error: "Este e-mail já pertence à casa." }, 409, corsHeaders);
   }
 
+  const existingAccount = await findUserByEmail(adminClient, email);
+  if (existingAccount.error) {
+    console.error("Could not list auth users:", existingAccount.error.message);
+    return jsonResponse({ error: "Não foi possível verificar se este e-mail já tem conta." }, 500, corsHeaders);
+  }
+
+  if (existingAccount.user) {
+    const { data: linkedElsewhere, error: linkedElsewhereError } = await adminClient
+      .from("household_members")
+      .select("household_id")
+      .eq("user_id", existingAccount.user.id)
+      .maybeSingle();
+    if (linkedElsewhereError) {
+      console.error("Could not check the existing account household:", linkedElsewhereError.message);
+      return jsonResponse({ error: "Não foi possível verificar a casa desta conta." }, 500, corsHeaders);
+    }
+    if (linkedElsewhere) {
+      return jsonResponse({
+        error: "Esta conta já está vinculada a outra casa. Cada conta participa de uma casa por vez; peça para a pessoa sair da outra casa antes de entrar nesta.",
+      }, 409, corsHeaders);
+    }
+    const { error: linkError } = await adminClient
+      .from("household_members")
+      .insert({
+        user_id: existingAccount.user.id,
+        household_id: owner.household_id,
+        email,
+        role: "member",
+        invited_by: userResult.user.id,
+      });
+    if (linkError) {
+      console.error("Could not link the existing account to the household:", linkError.message);
+      return jsonResponse({ error: "Não foi possível vincular esta conta à casa." }, 500, corsHeaders);
+    }
+    return jsonResponse({
+      message: "Conta existente vinculada à casa. Peça para entrar com a senha desta conta; se não lembrar, use \"Esqueci minha senha\".",
+    }, 200, corsHeaders);
+  }
+
   const { data: invited, error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(
     email,
     { redirectTo: inviteRedirect.toString() }
@@ -145,4 +184,16 @@ function jsonResponse(body: Record<string, string>, status: number, corsHeaders:
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+async function findUserByEmail(adminClient: SupabaseClient, email: string) {
+  const perPage = 200;
+  for (let page = 1; page <= 50; page += 1) {
+    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage });
+    if (error) return { user: null, error };
+    const user = data.users.find(candidate => candidate.email?.toLowerCase() === email);
+    if (user) return { user, error: null };
+    if (data.users.length < perPage) break;
+  }
+  return { user: null, error: null };
 }

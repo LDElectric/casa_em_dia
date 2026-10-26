@@ -36,7 +36,14 @@ Para outro domínio, atualize `APP_SITE_URL` e permita esse domínio na lista de
 
 As variáveis `SUPABASE_URL`, `SUPABASE_ANON_KEY` e `SUPABASE_SERVICE_ROLE_KEY` são fornecidas ao ambiente das Edge Functions pelo Supabase. A chave de serviço deve permanecer exclusivamente nesse ambiente; nunca a copie para o HTML, para `supabase-config.js` ou para o navegador.
 
-Configure o envio de e-mails em **Authentication → SMTP Settings** antes de convidar outras pessoas. O responsável pode convidar e remover membros em **Ajustes**. Somente a função de servidor valida o papel `owner` e usa a chave `service_role`; o responsável informa apenas o e-mail. A pessoa convidada cria a própria senha pelo link recebido. Contas existentes podem usar **Esqueci ou preciso criar minha senha** na tela de login. A opção de redefinição não cria uma conta nem concede acesso a uma casa.
+Configure o envio de e-mails em **Authentication → SMTP Settings** antes de convidar outras pessoas. O responsável pode convidar e remover membros em **Ajustes**. Somente a função de servidor valida o papel `owner` e usa a chave `service_role`; o responsável informa apenas o e-mail. Contas existentes podem usar **Esqueci ou preciso criar minha senha** na tela de login. A opção de redefinição não cria uma conta nem concede acesso a uma casa.
+
+A função de convites atende os dois casos:
+
+- **e-mail sem conta** — envia o convite do Supabase Auth para a pessoa criar a senha e insere o vínculo em `household_members`;
+- **e-mail que já tem conta** — não usa `inviteUserByEmail` (o Supabase recusa e-mail já cadastrado); localiza a conta com `auth.admin.listUsers`, insere o vínculo da casa e responde com uma mensagem explicando que a pessoa deve entrar com a senha que já usa. Se a conta já pertencer a outra casa, a função responde 409 com instrução para sair da outra casa primeiro, porque `household_members.user_id` é chave primária: **uma conta participa de uma casa por vez**.
+
+Por isso, desative o cadastro público em **Authentication → Sign In / Providers → Allow new users to sign up**. Com o cadastro aberto, alguém pode criar uma conta sozinho e o app abre a tela **Crie sua casa**, deixando a pessoa numa casa vazia — e a partir daí ela não vê os lançamentos da casa já existente. Se isso acontecer, o responsável convida o e-mail em **Ajustes → Membros** e o vínculo é criado na hora.
 
 Na tela de entrada, **“Primeiro acesso: já recebi um convite”** solicita um link para ativar uma conta já convidada; **“Esqueci minha senha”** solicita uma redefinição. Os dois caminhos levam a uma tela de envio distinta e, depois, a uma tela de senha com título específico para ativação ou redefinição. Nenhum deles cria usuários; novos membros continuam sendo adicionados pelo responsável.
 

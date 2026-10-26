@@ -886,7 +886,7 @@ if (!config?.url || !config?.publishableKey) {
       return;
     }
     document.getElementById('invite-email').value = '';
-    setMessage('invite-message', 'Convite enviado.');
+    setMessage('invite-message', data?.message ?? 'Convite enviado.');
     await loadHouseholdData();
   }
 

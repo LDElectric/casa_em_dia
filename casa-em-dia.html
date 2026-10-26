@@ -1035,6 +1035,7 @@
     <section class="auth-card">
       <h1>Crie sua casa</h1>
       <p>Defina um nome para organizar as finanças compartilhadas. Depois, você poderá convidar membros por e-mail.</p>
+      <p class="helper">Já existe uma casa com os seus lançamentos? Não crie outra aqui: peça ao responsável para convidar este e-mail em <strong>Ajustes → Membros</strong>. Cada conta participa de uma casa por vez.</p>
       <form id="household-form">
         <label class="form-label" for="household-name">Nome da casa</label>
         <input class="form-input" id="household-name" required maxlength="80" placeholder="Ex.: Minha casa" />
@@ -1047,7 +1048,7 @@
   <div class="modal-overlay" id="invite-dialog" hidden>
     <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="invite-title">
       <h2 id="invite-title">Convidar membro</h2>
-      <p>A pessoa receberá um convite por e-mail e terá o próprio acesso à casa.</p>
+      <p>A pessoa passa a ver os mesmos lançamentos da casa. Se o e-mail ainda não tem conta, ela recebe um convite para criar a senha; se já tem conta, o acesso é vinculado na hora e ela entra com a senha que já usa.</p>
       <form id="invite-form">
         <label class="form-label" for="invite-email">E-mail</label>
         <input class="form-input" id="invite-email" type="email" autocomplete="email" required maxlength="254" />
