@@ -53,10 +53,23 @@ São 4 toques no caminho feliz, contra 8 a 10 do fluxo anterior (que exigia ir a
 
 A aba **Receitas** (também acessível por *Ver e gerenciar todas as receitas*, dentro do grupo Receitas da aba Mês) mostra a renda da casa em três blocos:
 
-- **Receitas que repetem todo mês** — os modelos fixos e variáveis (salário, benefícios, freelance): valor, tipo, desde quando e quantos meses já foram gerados. Ações: **Salvar valor**, **Marcar como fixa/variável** e **Excluir de todos os meses** (apaga o modelo e os lançamentos deste mês em diante; o histórico anterior fica). Modelos antigos pausados mostram **Voltar a repetir**;
-- **Receitas deste mês** — o que de fato entrou no mês selecionado, com **Ajustar** (valor, tipo e grupo), **Remover deste mês** (sai só deste mês, a repetição continua) e **Excluir de todos os meses**. Se alguma receita foi removida do mês, o botão **Restaurar receitas removidas** reaparece;
+- **Receitas que repetem todo mês** — os modelos fixos e variáveis (salário, benefícios, freelance): valor, tipo, **prazo** (`Sem prazo`, `Até set/2027`, `Último mês`, `Encerrada em set/2027`), desde quando e quantos meses já foram gerados. Ações: **Salvar valor**, **Marcar como fixa/variável**, **Encerrar repetição** (para a série a partir do próximo mês e mantém o histórico), **Excluir cadastro** (só para erro/duplicado) e **Voltar a repetir** nas encerradas;
+- **Receitas deste mês** — o que de fato entrou no mês selecionado, com **Ajustar** (valor, tipo, grupo e **Repetir até**), **Remover deste mês** (sai só deste mês) e **Encerrar repetição**. Se alguma receita foi removida do mês, o botão **Restaurar receitas removidas** reaparece;
+- **Encerradas** — grupo recolhível com as séries que terminaram, para não poluir a lista e ainda dar contexto ("por que outubro não tem esse valor?").
 
-São só duas ações destrutivas em todo o app: **remover deste mês** (pontual) e **excluir de todos os meses** (definitivo a partir do mês atual). "Pausar repetição" foi removido por ser redundante com a exclusão.
+### Série com prazo (o modelo que os apps comerciais usam)
+
+Toda receita/despesa recorrente é uma **série com início e fim opcional**:
+
+| Situação | Como fica |
+|---|---|
+| Salário efetivo, aluguel (sem data para acabar) | **Repetir até em branco** = **sem prazo**; repete até você encerrar |
+| Emprego temporário de 11 meses | **Repetir até set/2027** → gera 11 meses e **para sozinho** |
+| Acabou antes do previsto | **Encerrar repetição** a partir do próximo mês; o passado fica |
+| Contrato renovou | **Ajustar → Repetir até** com a nova data (estende) |
+| Voltou depois de um tempo | Cria de novo com início no mês da volta; a encerrada não conflita |
+
+O app **não materializa** anos de meses: cada mês é gerado ao ser aberto (`ensure_monthly_control_items` respeita `starts_month` e `ends_month`). As únicas ações destrutivas são **remover deste mês** (pontual) e **excluir cadastro** (erro/duplicado); "pausar repetição" foi removido por ser redundante com o encerramento.
 - **Adicionar receita** — nome, valor e **Repetir todo mês** marcado por padrão (desmarcado, vale só para o mês). Com "valor varia por mês", cada mês começa sem valor para você preencher.
 
 Correção de repetição: encerrar ou excluir uma receita fixa agora corta sempre a partir do **mês atual real** (não do mês que está sendo exibido) e limpa as linhas futuras que ficavam órfãs. Antes, ao excluir o modelo olhando um mês futuro, as linhas daquele mês sobreviviam sem vínculo e continuavam aparecendo em outros meses como "avulsas".

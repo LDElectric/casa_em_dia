@@ -191,10 +191,15 @@ if (!config?.url || !config?.publishableKey) {
     document.querySelectorAll('form[data-control-group]').forEach(form => {
       form.addEventListener('submit', addMonthlyControlItem);
       const variableOption = form.elements.variable_amount?.closest('label');
+      const untilOption = form.elements.repeat_until?.closest('label') ?? form.elements.repeat_until;
       const syncVariableOption = () => {
         const repeating = form.elements.repeat_monthly.checked;
-        if (!repeating) form.elements.variable_amount.checked = false;
+        if (!repeating) {
+          form.elements.variable_amount.checked = false;
+          if (form.elements.repeat_until) form.elements.repeat_until.value = '';
+        }
         if (variableOption) variableOption.hidden = !repeating;
+        if (untilOption) untilOption.hidden = !repeating;
       };
       form.elements.repeat_monthly.addEventListener('change', syncVariableOption);
       form.addEventListener('reset', () => window.setTimeout(syncVariableOption, 0));
@@ -216,6 +221,7 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('income-restore-removed').addEventListener('click', restoreRemovedIncomeRows);
     const controlItemDialog = document.getElementById('control-item-dialog');
     document.getElementById('control-item-form').addEventListener('submit', saveControlItemAdjustment);
+    document.getElementById('control-item-end-series').addEventListener('click', endControlItemSeries);
     document.getElementById('control-item-delete-all').addEventListener('click', deleteControlItemEverywhere);
     document.getElementById('control-item-delete').addEventListener('click', deleteControlItemFromDialog);
     document.querySelectorAll('#control-item-dialog [data-close-dialog]').forEach(button =>
@@ -723,10 +729,20 @@ if (!config?.url || !config?.publishableKey) {
           ? fallback
           : { data: fallback.data.map(item => ({ ...item, competence_month: null })), error: null };
       })(),
-      supabase.from('recurring_items')
-        .select('id, title, transaction_type, category, subcategory, budget_group, amount_cents, amount_behavior, frequency, day_of_month, month_of_year, starts_month, active')
-        .eq('household_id', householdId)
-        .order('title'),
+      (async () => {
+        const withEnd = await supabase.from('recurring_items')
+          .select('id, title, transaction_type, category, subcategory, budget_group, amount_cents, amount_behavior, frequency, day_of_month, month_of_year, starts_month, ends_month, active')
+          .eq('household_id', householdId)
+          .order('title');
+        if (!withEnd.error) return withEnd;
+        const fallback = await supabase.from('recurring_items')
+          .select('id, title, transaction_type, category, subcategory, budget_group, amount_cents, amount_behavior, frequency, day_of_month, month_of_year, starts_month, active')
+          .eq('household_id', householdId)
+          .order('title');
+        return fallback.error
+          ? fallback
+          : { data: fallback.data.map(item => ({ ...item, ends_month: null })), error: null };
+      })(),
       (async () => {
         const withCutoff = await supabase.from('households')
           .select('name, finance_month_cutoff_day')
@@ -1126,8 +1142,12 @@ if (!config?.url || !config?.publishableKey) {
     return duplicates.length;
   }
 
+  /**
+   * Cria/atualiza a série recorrente. `endsMonth` vazio significa "sem prazo":
+   * a série repete até alguém encerrar. Com data, deixa de gerar sozinha.
+   */
   async function saveRecurringTemplate({
-    template, itemName, transactionType, controlGroup, amountCents, amountBehavior
+    template, itemName, transactionType, controlGroup, amountCents, amountBehavior, endsMonth = null
   }) {
     await deactivateDuplicateTemplates({
       templateId: template?.id ?? null,
@@ -1148,13 +1168,15 @@ if (!config?.url || !config?.publishableKey) {
       frequency: 'monthly',
       month_of_year: null,
       day_of_month: 1,
-      active: true
+      active: true,
+      ends_month: endsMonth || null
     };
     if (template) {
       const { error } = await supabase.from('recurring_items')
         .update(payload)
         .eq('id', template.id)
         .eq('household_id', state.membership.household_id);
+      if (!error) await trimMonthsAfterEnd(template.id, endsMonth);
       return { id: template.id, error, reused: true };
     }
     const { data, error } = await supabase.from('recurring_items')
@@ -1166,7 +1188,38 @@ if (!config?.url || !config?.publishableKey) {
       })
       .select('id')
       .single();
+    if (!error && data?.id) await trimMonthsAfterEnd(data.id, endsMonth);
     return { id: data?.id ?? null, error, reused: false };
+  }
+
+  /** Remove meses gerados depois do término da série. */
+  async function trimMonthsAfterEnd(templateId, endsMonth) {
+    if (!templateId || !endsMonth) return;
+    const { error } = await supabase.from('monthly_control_items')
+      .delete()
+      .eq('recurring_item_id', templateId)
+      .gt('month_start', endsMonth)
+      .eq('household_id', state.membership.household_id);
+    if (error) console.warn('Could not trim months after the series end:', error.message);
+  }
+
+  function monthStartFromKey(monthKey) {
+    const key = String(monthKey ?? '').slice(0, 7);
+    return /^\d{4}-(0[1-9]|1[0-2])$/.test(key) ? `${key}-01` : null;
+  }
+
+  function nextMonthStart(monthStart) {
+    const [year, month] = String(monthStart ?? '').split('-').map(Number);
+    if (!year || !month) return null;
+    const date = new Date(year, month, 1);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+  }
+
+  function previousMonthStart(monthStart) {
+    const [year, month] = String(monthStart ?? '').split('-').map(Number);
+    if (!year || !month) return null;
+    const date = new Date(year, month - 2, 1);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
   }
 
   function isMissingColumnError(error, column) {
@@ -1381,16 +1434,28 @@ if (!config?.url || !config?.publishableKey) {
     const deleteButton = document.getElementById('control-item-delete');
     deleteButton.textContent = item.recurring_item_id ? 'Excluir deste mês' : 'Excluir';
     deleteButton.disabled = false;
+    const recurringTemplate = state.recurringItems.find(entry => entry.id === item.recurring_item_id);
+    const endWrap = document.getElementById('control-item-end-wrap');
+    if (endWrap) {
+      endWrap.hidden = !recurringTemplate;
+      const endInput = document.getElementById('control-item-end-input');
+      if (endInput) endInput.value = recurringTemplate?.ends_month ? recurringTemplate.ends_month.slice(0, 7) : '';
+    }
+    const endSeriesButton = document.getElementById('control-item-end-series');
+    if (endSeriesButton) {
+      endSeriesButton.hidden = !recurringTemplate || Boolean(recurringTemplate.ends_month);
+      endSeriesButton.disabled = false;
+    }
     const deleteAllButton = document.getElementById('control-item-delete-all');
     if (deleteAllButton) {
-      deleteAllButton.hidden = !item.recurring_item_id;
+      deleteAllButton.hidden = !recurringTemplate;
       deleteAllButton.disabled = false;
     }
     const deleteNote = document.getElementById('control-item-delete-note');
     if (deleteNote) {
       deleteNote.hidden = !item.recurring_item_id;
       deleteNote.textContent = item.recurring_item_id
-        ? '“Excluir” remove só este mês. “Excluir de todos os meses” apaga o modelo e os meses deste mês em diante, mantendo o histórico anterior.'
+        ? '“Excluir” remove só este mês. “Encerrar repetição” para a série a partir do próximo mês, mantendo o histórico. Use “Excluir cadastro” só para erro ou duplicado.'
         : '';
     }
     document.getElementById('control-item-save').disabled = false;
@@ -1481,13 +1546,28 @@ if (!config?.url || !config?.publishableKey) {
         if (error) throw error;
         showToast(`Item ajustado${groupNote}; a repetição foi encerrada a partir deste mês.`);
       } else {
+        const rawEnd = String(document.getElementById('control-item-end-input')?.value ?? '').trim();
+        const endsMonth = rawEnd ? monthStartFromKey(rawEnd) : null;
+        if (rawEnd && !endsMonth) {
+          setMessage('control-item-dialog-message', 'Informe um mês de término válido.');
+          saveButton.disabled = false;
+          return;
+        }
+        const seriesStart = recurring?.starts_month ?? item.month_start;
+        if (endsMonth && seriesStart && endsMonth < seriesStart) {
+          setMessage('control-item-dialog-message',
+            `O término não pode ser anterior ao início da série (${formatMonthKey(seriesStart)}).`);
+          saveButton.disabled = false;
+          return;
+        }
         const { id: templateId, error: templateError } = await saveRecurringTemplate({
           template: recurring ?? findRecurringTemplate(transactionType, controlGroup, name),
           itemName: name,
           transactionType,
           controlGroup,
           amountCents,
-          amountBehavior: behavior
+          amountBehavior: behavior,
+          endsMonth
         });
         if (templateError || !templateId) throw templateError ?? new Error('model not saved');
         const { error: ensureError } = await supabase.rpc('ensure_monthly_control_items', {
@@ -1542,9 +1622,74 @@ if (!config?.url || !config?.publishableKey) {
     }
   }
 
+  /** Encerra a série do item aberto no diálogo, a partir do próximo mês. */
+  async function endControlItemSeries() {
+    const item = editingControlItem;
+    const template = state.recurringItems.find(entry => entry.id === item?.recurring_item_id);
+    if (!template) return;
+    const ended = await endRecurringSeries(template, nextMonthStart(state.controlMonthKey));
+    if (ended) closeControlItemDialog();
+  }
+
   /**
-   * Exclui o item de forma geral: apaga o modelo da repetição e os lançamentos
-   * do mês atual em diante. Meses anteriores continuam como histórico.
+   * Encerra a série a partir de `stopMonthStart` (o mês informado já não existe
+   * mais). Nada do passado é apagado e o modelo fica como "Encerrada em <mês>".
+   */
+  async function endRecurringSeries(template, stopMonthStart = null) {
+    const stop = monthStartFromKey(stopMonthStart ?? nextMonthStart(state.controlMonthKey));
+    if (!stop) return false;
+    const lastMonth = previousMonthStart(stop);
+    if (lastMonth && template.starts_month && lastMonth < template.starts_month) {
+      showToast('A série ainda não tinha começado nesse mês. Use “Excluir cadastro”.');
+      return false;
+    }
+    const stopLabel = formatMonthKey(stop);
+    if (!window.confirm(
+      `Encerrar "${template.title}" a partir de ${stopLabel}? Os meses anteriores continuam no histórico e a receita deixa de repetir.`
+    )) return false;
+    const householdId = state.membership.household_id;
+    const finished = lastMonth != null && lastMonth < recurringCutoffMonthStart();
+    const { error } = await supabase.from('recurring_items')
+      .update({ ends_month: lastMonth, active: !finished })
+      .eq('id', template.id)
+      .eq('household_id', householdId);
+    if (error) {
+      console.error('Could not end recurring series:', error.message);
+      showToast('Não foi possível encerrar a repetição.');
+      return false;
+    }
+    const { error: rowsError } = await supabase.from('monthly_control_items')
+      .delete()
+      .eq('recurring_item_id', template.id)
+      .gte('month_start', stop)
+      .eq('household_id', householdId);
+    if (rowsError) console.warn('Could not remove months after the series end:', rowsError.message);
+    await removeOrphanMonthRows(template.title, template.transaction_type, previousMonthStart(stop));
+    showToast(`"${template.title}" encerrada a partir de ${stopLabel}. O histórico foi mantido.`);
+    await loadHouseholdData();
+    return true;
+  }
+
+  /** Volta a repetir um modelo encerrado. */
+  async function reopenRecurringSeries(template) {
+    if (!window.confirm(`Voltar a repetir "${template.title}" a partir deste mês?`)) return;
+    const { error } = await supabase.from('recurring_items')
+      .update({ ends_month: null, active: true })
+      .eq('id', template.id)
+      .eq('household_id', state.membership.household_id);
+    if (error) {
+      console.error('Could not reopen recurring series:', error.message);
+      showToast('Não foi possível reabrir a repetição.');
+      return;
+    }
+    await supabase.rpc('ensure_monthly_control_items', { target_month_start: state.controlMonthKey });
+    showToast('Repetição reaberta a partir deste mês.');
+    await loadHouseholdData();
+  }
+
+  /**
+   * Exclui o cadastro (para erro/duplicado): apaga o modelo da repetição e os
+   * lançamentos do mês atual em diante. Meses anteriores continuam como histórico.
    */
   async function deleteControlItemEverywhere() {
     const item = editingControlItem;
@@ -1553,10 +1698,8 @@ if (!config?.url || !config?.publishableKey) {
     const title = template?.title ?? item.item_name;
     const transactionType = template?.transaction_type ?? item.transaction_type;
     if (!window.confirm(
-      `Excluir "${title}" de todos os meses? O modelo e os lançamentos deste mês em diante serão removidos. Os meses anteriores continuam no histórico.`
+      `Excluir o cadastro de "${title}"? Use isto para erros ou duplicados: o cadastro e os lançamentos deste mês em diante serão removidos. Os meses anteriores continuam no histórico.`
     )) return;
-    const deleteAllButton = document.getElementById('control-item-delete-all');
-    if (deleteAllButton) deleteAllButton.disabled = true;
     const householdId = state.membership.household_id;
     const cutoff = recurringCutoffMonthStart();
     try {
@@ -3646,11 +3789,11 @@ if (!config?.url || !config?.publishableKey) {
           ? isIncome ? 'Receita variável' : 'Despesa variável'
           : isIncome ? 'Receita fixa' : 'Despesa fixa';
         tags.append(behavior);
-        if (!item.active) {
-          const paused = document.createElement('span');
-          paused.className = 'recurring-tag paused';
-          paused.textContent = 'Repetição pausada';
-          tags.append(paused);
+        if (!item.active || item.ends_month) {
+          const status = document.createElement('span');
+          status.className = 'recurring-tag paused';
+          status.textContent = seriesStatusLabel(item);
+          tags.append(status);
         }
         info.append(tags);
         if (item.amount_behavior === 'fixed') {
@@ -3680,20 +3823,28 @@ if (!config?.url || !config?.publishableKey) {
         toggleBehavior.setAttribute('aria-label', `${toggleBehavior.textContent} ${item.title}`);
         toggleBehavior.addEventListener('click', () => toggleRecurringAmountBehavior(item));
         actions.append(toggleBehavior);
-        if (!item.active) {
+        if (item.ends_month || !item.active) {
           const resume = document.createElement('button');
           resume.className = 'recurring-action';
           resume.type = 'button';
           resume.textContent = 'Voltar a repetir';
           resume.setAttribute('aria-label', `Voltar a repetir ${item.title}`);
-          resume.addEventListener('click', () => toggleRecurringActive(item));
+          resume.addEventListener('click', () => reopenRecurringSeries(item));
           actions.append(resume);
+        } else {
+          const end = document.createElement('button');
+          end.className = 'recurring-action';
+          end.type = 'button';
+          end.textContent = 'Encerrar repetição';
+          end.setAttribute('aria-label', `Encerrar repetição de ${item.title}`);
+          end.addEventListener('click', () => endRecurringSeries(item, nextMonthStart(state.controlMonthKey)));
+          actions.append(end);
         }
         const remove = document.createElement('button');
         remove.className = 'remove-member';
         remove.type = 'button';
         remove.textContent = 'Excluir';
-        remove.setAttribute('aria-label', `Excluir ${item.title} de todos os meses`);
+        remove.setAttribute('aria-label', `Excluir o cadastro de ${item.title}`);
         remove.addEventListener('click', () => deleteRecurringItem(item));
         actions.append(remove);
         row.append(info, actions);
@@ -3816,7 +3967,7 @@ if (!config?.url || !config?.publishableKey) {
 
   async function deleteRecurringItem(item) {
     if (!window.confirm(
-      `Excluir "${item.title}" de todos os meses? O modelo e os lançamentos deste mês em diante serão removidos. Os meses anteriores continuam no histórico.`
+      `Excluir o cadastro de "${item.title}"? Use isto para erros ou duplicados: o cadastro e os lançamentos deste mês em diante serão removidos. Os meses anteriores continuam no histórico. Para apenas encerrar a repetição, use "Encerrar repetição".`
     )) return;
     const householdId = state.membership.household_id;
     const cutoff = recurringCutoffMonthStart();
@@ -4383,6 +4534,16 @@ if (!config?.url || !config?.publishableKey) {
     const amountCents = rawAmount ? parseAmount(rawAmount) : null;
     const repeatMonthly = form.elements.repeat_monthly.checked;
     const variableAmount = repeatMonthly && Boolean(form.elements.variable_amount?.checked);
+    const rawEnd = repeatMonthly ? String(form.elements.repeat_until?.value ?? '').trim() : '';
+    const endsMonth = rawEnd ? monthStartFromKey(rawEnd) : null;
+    if (rawEnd && !endsMonth) {
+      reportControlMessage('Informe um mês de término válido.');
+      return;
+    }
+    if (endsMonth && endsMonth < state.controlMonthKey) {
+      reportControlMessage('O término precisa ser igual ou posterior ao mês do lançamento.');
+      return;
+    }
     if (!itemName || itemName.length > 120
       || (!autoClassify && !['income', 'fixed', 'variable', 'additional'].includes(groupInput))
       || (rawAmount && (!Number.isSafeInteger(amountCents) || amountCents < 0))
@@ -4424,7 +4585,8 @@ if (!config?.url || !config?.publishableKey) {
           transactionType,
           controlGroup,
           amountCents,
-          amountBehavior
+          amountBehavior,
+          endsMonth
         });
         if (templateError || !templateId) throw templateError ?? new Error('model not created');
         const { error: ensureError } = await supabase.rpc('ensure_monthly_control_items', {
@@ -4444,9 +4606,10 @@ if (!config?.url || !config?.publishableKey) {
         });
         if (rowError) throw rowError;
         form.reset();
-        reportControlMessage(existingRow
-          ? `Item restaurado em ${groupLabel}${reasonLabel ? ` (${reasonLabel})` : ''} e fixado para os próximos meses.`
-          : `Item fixo salvo em ${groupLabel}${reasonLabel ? ` (${reasonLabel})` : ''}; ele aparecerá automaticamente nos próximos meses.`);
+        const endNote = endsMonth
+          ? ` até ${formatMonthKey(endsMonth)}`
+          : ' sem prazo';
+        reportControlMessage(`${existingRow ? 'Item restaurado' : 'Item fixo salvo'} em ${groupLabel}${reasonLabel ? ` (${reasonLabel})` : ''}: repete${endNote}.`);
         await loadHouseholdData();
         return;
       }
@@ -4808,19 +4971,53 @@ if (!config?.url || !config?.publishableKey) {
     await refreshControlState();
   }
 
+  function seriesStatusLabel(template) {
+    const current = recurringCutoffMonthStart();
+    if (template.ends_month) {
+      if (template.ends_month < current) return `Encerrada em ${formatMonthKey(template.ends_month)}`;
+      if (template.ends_month === current) return `Último mês: ${formatMonthKey(template.ends_month)}`;
+      return `Até ${formatMonthKey(template.ends_month)}`;
+    }
+    if (!template.active) return 'Repetição parada';
+    return 'Sem prazo';
+  }
+
+  function isSeriesEnded(template) {
+    return Boolean(template.ends_month) && template.ends_month < recurringCutoffMonthStart();
+  }
+
   function renderIncomeTemplates() {
     const container = document.getElementById('income-recurring-list');
+    const endedContainer = document.getElementById('income-ended-list');
     if (!container) return;
     container.replaceChildren();
+    endedContainer?.replaceChildren();
     const templates = state.recurringItems
       .filter(item => item.transaction_type === 'income')
       .sort((left, right) => Number(right.active) - Number(left.active)
         || left.title.localeCompare(right.title, 'pt-BR'));
     if (!templates.length) {
       appendEmptyState(container, 'Nenhuma receita fixa cadastrada. Adicione abaixo e mantenha “Repetir todo mês” marcado.');
+      if (endedContainer) endedContainer.closest('details')?.setAttribute('hidden', '');
       return;
     }
-    for (const template of templates) {
+    const running = templates.filter(template => !isSeriesEnded(template));
+    const ended = templates.filter(template => isSeriesEnded(template));
+    const endedGroup = endedContainer?.closest('details');
+    if (endedGroup) {
+      endedGroup.hidden = !ended.length;
+      const summary = endedGroup.querySelector('summary span:last-child');
+      if (summary) summary.textContent = `${ended.length} ${ended.length === 1 ? 'encerrada' : 'encerradas'}`;
+    }
+    if (!running.length) {
+      appendEmptyState(container, 'Nenhuma receita ativa. Veja as encerradas abaixo ou adicione uma nova.');
+    }
+    for (const template of running) renderIncomeTemplateRow(container, template);
+    for (const template of ended) renderIncomeTemplateRow(endedContainer, template);
+  }
+
+  function renderIncomeTemplateRow(container, template) {
+    {
       const isVariable = incomeTemplateBehavior(template) === 'variable';
       const generated = monthsGeneratedByTemplate(template.id);
       const row = document.createElement('div');
@@ -4836,11 +5033,11 @@ if (!config?.url || !config?.publishableKey) {
       behaviorTag.className = 'recurring-tag';
       behaviorTag.textContent = isVariable ? 'Receita variável' : 'Receita fixa';
       tags.append(behaviorTag);
-      if (!template.active) {
-        const paused = document.createElement('span');
-        paused.className = 'recurring-tag paused';
-        paused.textContent = 'Repetição parada';
-        tags.append(paused);
+      if (!template.active || template.ends_month) {
+        const statusTag = document.createElement('span');
+        statusTag.className = 'recurring-tag paused';
+        statusTag.textContent = seriesStatusLabel(template);
+        tags.append(statusTag);
       }
       const subtitle = document.createElement('div');
       subtitle.className = 'subtitle';
@@ -4879,19 +5076,25 @@ if (!config?.url || !config?.publishableKey) {
       behaviorButton.textContent = isVariable ? 'Marcar como fixa' : 'Marcar como variável';
       behaviorButton.addEventListener('click', () => toggleRecurringAmountBehavior(template));
       actions.append(behaviorButton);
+      if (isSeriesEnded(template)) {
+        const reopen = document.createElement('button');
+        reopen.type = 'button';
+        reopen.textContent = 'Voltar a repetir';
+        reopen.addEventListener('click', () => reopenRecurringSeries(template));
+        actions.append(reopen);
+      } else {
+        const end = document.createElement('button');
+        end.type = 'button';
+        end.textContent = 'Encerrar repetição';
+        end.addEventListener('click', () => endRecurringSeries(template, nextMonthStart(state.controlMonthKey)));
+        actions.append(end);
+      }
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'danger';
-      remove.textContent = 'Excluir de todos os meses';
+      remove.textContent = 'Excluir cadastro';
       remove.addEventListener('click', () => deleteRecurringItem(template));
       actions.append(remove);
-      if (!template.active) {
-        const resume = document.createElement('button');
-        resume.type = 'button';
-        resume.textContent = 'Voltar a repetir';
-        resume.addEventListener('click', () => toggleRecurringActive(template));
-        actions.append(resume);
-      }
       info.append(actions);
       row.append(info);
       container.append(row);
@@ -4937,13 +5140,12 @@ if (!config?.url || !config?.publishableKey) {
     remove.textContent = template ? 'Remover deste mês' : 'Excluir';
     remove.addEventListener('click', () => removeIncomeMonthRow(monthRow));
     actions.append(remove);
-    if (template) {
-      const removeAll = document.createElement('button');
-      removeAll.type = 'button';
-      removeAll.className = 'danger';
-      removeAll.textContent = 'Excluir de todos os meses';
-      removeAll.addEventListener('click', () => deleteRecurringItem(template));
-      actions.append(removeAll);
+    if (template && !isSeriesEnded(template)) {
+      const endSeries = document.createElement('button');
+      endSeries.type = 'button';
+      endSeries.textContent = 'Encerrar repetição';
+      endSeries.addEventListener('click', () => endRecurringSeries(template, nextMonthStart(state.controlMonthKey)));
+      actions.append(endSeries);
     }
     info.append(actions);
 

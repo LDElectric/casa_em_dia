@@ -471,10 +471,10 @@
     .item-dialog-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
     .item-dialog-actions .secondary-btn,
     .item-dialog-actions .primary-btn { flex: 1; margin: 0; }
-    .item-dialog-actions .danger-btn { color: var(--red); border-color: rgba(214,79,93,0.45); }
-    #control-item-delete-all { flex-basis: 100%; }
-    @media (max-width: 420px) {
-      #control-item-delete-all { flex-basis: 100%; }
+    .link-danger {
+      background: none; border: 0; padding: 8px 0; color: var(--red);
+      font: inherit; font-size: 12px; font-weight: 600; text-align: left;
+      text-decoration: underline; cursor: pointer;
     }
     .item-dialog .helper { margin-top: 10px; }
     .card-group-actions { display: flex; justify-content: flex-end; margin: 0 12px 10px; }
@@ -648,6 +648,8 @@
     }
     .income-row-actions button.danger { color: var(--red); }
     .income-row .form-input { max-width: 200px; }
+    .control-until-option { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .control-until-option .form-input { max-width: 160px; padding: 8px 10px; }
     .income-row .recurring-amount-save { align-self: flex-start; }
     .statement-classification {
       display: inline-block; width: fit-content; padding: 3px 7px; border-radius: 7px;
@@ -1205,6 +1207,7 @@
             </div>
             <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" /> Fixar e repetir nos meses seguintes</label>
             <label class="control-repeat-option control-variable-option" hidden><input name="variable_amount" type="checkbox" /> Valor varia por mês (ex.: consumo ou freelance)</label>
+            <label class="control-repeat-option control-until-option" hidden>Repetir até (opcional) <input class="form-input" name="repeat_until" type="month" aria-label="Repetir até qual mês" /></label>
             <button class="primary-btn" type="submit">Adicionar</button>
             <p class="helper quick-add-hint" id="quick-add-hint">Despesas entram automaticamente em Gastos fixos, variáveis ou adicionais.</p>
           </form>
@@ -1276,7 +1279,14 @@
         <div class="section">
           <div class="section-title">Receitas que repetem todo mês</div>
           <div class="list" id="income-recurring-list"></div>
-          <p class="helper"><strong>Fixa</strong> = mesmo valor em todos os meses. <strong>Variável</strong> = o item repete, mas cada mês começa sem valor para você preencher. Para tirar uma receita que não existe mais, use <strong>Excluir de todos os meses</strong>: ela sai deste mês em diante e o histórico anterior fica guardado.</p>
+          <details class="control-group" id="income-ended-group" hidden>
+            <summary class="control-group-heading">
+              <h2><span class="group-icon" aria-hidden="true">🗂️</span>Encerradas</h2>
+              <span class="control-group-total">0 encerradas</span>
+            </summary>
+            <div class="list" id="income-ended-list"></div>
+          </details>
+          <p class="helper"><strong>Fixa</strong> = mesmo valor em todos os meses. <strong>Variável</strong> = o item repete, mas cada mês começa sem valor para você preencher. <strong>Repetir até</strong> serve para contratos com prazo (ex.: emprego de 11 meses): a série para sozinha. Em branco, repete sem prazo. Para encerrar antes do previsto, use <strong>Encerrar repetição</strong> — o histórico anterior fica guardado.</p>
         </div>
 
         <div class="section">
@@ -1294,6 +1304,7 @@
             </div>
             <label class="control-repeat-option"><input name="repeat_monthly" type="checkbox" checked /> Repetir todo mês na renda da casa</label>
             <label class="control-repeat-option control-variable-option"><input name="variable_amount" type="checkbox" /> Valor varia por mês (ex.: hora extra, freelance)</label>
+            <label class="control-repeat-option control-until-option">Repetir até (opcional) <input class="form-input" name="repeat_until" type="month" aria-label="Repetir até qual mês" /></label>
             <button class="primary-btn" type="submit">Adicionar receita</button>
             <p class="helper">Com <strong>Repetir todo mês</strong> marcado, o item entra nos meses seguintes: fixo com o mesmo valor, variável em branco para preencher. Desmarcado, vale só para o mês selecionado.</p>
           </form>
@@ -1656,6 +1667,11 @@
         </div>
         <p class="helper" id="control-item-behavior-note"></p>
       </div>
+      <div class="form-group" id="control-item-end-wrap" hidden>
+        <label class="form-label" for="control-item-end-input">Repetir até (opcional)</label>
+        <input class="form-input" id="control-item-end-input" type="month" />
+        <p class="helper">Em branco = sem prazo (salário efetivo). Com data = contrato temporário que para sozinho.</p>
+      </div>
       <div class="form-group" id="control-item-group-wrap">
         <span class="form-label" id="control-item-group-label">Grupo</span>
         <div class="freq-toggle" id="control-item-group" role="group" aria-labelledby="control-item-group-label">
@@ -1666,10 +1682,11 @@
         <p class="helper">Corrija aqui se a classificação automática não ficou certa.</p>
       </div>
       <div class="item-dialog-actions">
-        <button class="secondary-btn danger-btn" type="button" id="control-item-delete-all" hidden>Excluir de todos os meses</button>
+        <button class="secondary-btn" type="button" id="control-item-end-series" hidden>Encerrar repetição</button>
         <button class="secondary-btn" type="button" id="control-item-delete">Excluir</button>
         <button class="primary-btn" type="submit" id="control-item-save">Salvar</button>
       </div>
+      <button class="link-danger" type="button" id="control-item-delete-all" hidden>Excluir cadastro (erro ou duplicado)</button>
       <p class="helper" id="control-item-delete-note" hidden></p>
       <p class="helper" id="control-item-dialog-message" role="status" aria-live="polite"></p>
     </form>
