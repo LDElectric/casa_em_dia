@@ -2799,8 +2799,8 @@ if (!config?.url || !config?.publishableKey) {
           ? 'Total sugerido pelo PDF. '
           : 'Sugestão calculada pelas compras do arquivo; confira com o total em aberto da fatura. ';
       statementTotalNote.textContent = difference
-        ? `${estimate}Diferença de ${formatMoney(difference)} em relação às compras. No resumo do mês, o total em aberto entra como despesa no mês do vencimento; as compras ficam categorizadas para análise sem duplicar a saída.`
-        : `${estimate}O total entra como despesa no mês do vencimento; as compras continuam categorizadas para análise sem duplicar a saída.`;
+        ? `${estimate}Diferença de ${formatMoney(difference)} em relação às compras. No resumo do mês, o total em aberto entra no mês de competência (vencimento até o dia 15 conta no mês anterior); as compras ficam categorizadas para análise sem duplicar a saída.`
+        : `${estimate}O total entra no mês de competência (vencimento até o dia 15 conta no mês anterior); as compras continuam categorizadas para análise sem duplicar a saída.`;
     };
     statementTotalInput.oninput();
     const container = document.getElementById('card-import-rows');
