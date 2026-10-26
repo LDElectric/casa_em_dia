@@ -460,6 +460,29 @@
     .item-dialog-actions .secondary-btn,
     .item-dialog-actions .primary-btn { flex: 1; margin: 0; }
     .item-dialog .helper { margin-top: 10px; }
+    .card-group-actions { display: flex; justify-content: flex-end; margin: 0 12px 10px; }
+    .card-add-button {
+      width: auto; min-height: 44px; margin: 0; padding: 10px 16px;
+      font-size: 14px; border-radius: 12px;
+    }
+    .card-list-cta { width: calc(100% - 24px); margin: 2px 12px 14px; }
+    .link-button {
+      display: inline-flex; align-items: center; gap: 6px;
+      min-height: 44px; margin-top: 4px; padding: 8px 2px;
+      border: 0; background: transparent; color: var(--accent);
+      font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .link-button:hover { text-decoration: underline; }
+    .card-form-extra { margin-bottom: 14px; }
+    .card-form-extra summary {
+      display: flex; align-items: center; min-height: 44px;
+      color: var(--text-secondary); font-size: 14px; font-weight: 600;
+      cursor: pointer; list-style: none;
+    }
+    .card-form-extra summary::-webkit-details-marker { display: none; }
+    .card-form-extra summary::before { content: "+"; margin-right: 8px; color: var(--accent); font-weight: 700; }
+    .card-form-extra[open] summary::before { content: "–"; }
+    .card-form-extra .form-group { margin: 4px 0 0; }
     body.dialog-open { overflow: hidden; }
 
     .form-group { margin-bottom: 16px; }
@@ -1172,8 +1195,11 @@
           </div>
           <details class="control-group credit-card-group" open aria-labelledby="control-card-title">
             <summary class="control-group-heading"><h2 id="control-card-title"><span class="group-icon" aria-hidden="true">💳</span>Faturas de cartão</h2><span class="control-group-total" id="control-cards-total">R$ 0,00</span></summary>
+            <div class="card-group-actions">
+              <button class="secondary-btn card-add-button" type="button" id="open-card-form">+ Novo cartão</button>
+            </div>
             <div class="control-list" id="control-cards-list"></div>
-            <p class="helper control-group-empty">Use “Importar fatura” no cartão desejado. O total aparece aqui, e as compras entram nos grupos acima.</p>
+            <p class="helper control-group-empty">Escolha um cartão e toque em “Importar fatura” (CSV, PDF com texto ou OFX). O total entra no mês do vencimento e as compras alimentam os grupos acima.</p>
           </details>
           <details class="control-group" id="future-forecast-group" open aria-labelledby="future-forecast-title">
             <summary class="control-group-heading"><h2 id="future-forecast-title"><span class="group-icon" aria-hidden="true">🔮</span>Previsão dos próximos meses</h2><span class="control-group-total" id="future-forecast-summary">Projeção</span></summary>
@@ -1263,7 +1289,7 @@
           <div class="info-box">Importe CSV, PDF com texto selecionável ou OFX. O total em aberto da fatura entra como despesa no mês do vencimento; cada compra pode ser classificada para grupos e insights sem duplicar essa saída.</div>
           <form id="credit-card-form" class="card">
             <div class="form-group"><label class="form-label" for="card-label">Nome do cartão</label><input class="form-input" id="card-label" maxlength="80" placeholder="Ex.: Cartão da Maria / Cartão principal" required /></div>
-            <div class="form-group"><label class="form-label" for="card-provider">Operadora</label><input class="form-input" id="card-provider" maxlength="60" placeholder="Ex.: Visa, Mastercard, banco" required /></div>
+            <div class="form-group"><label class="form-label" for="card-provider">Operadora ou banco (opcional)</label><input class="form-input" id="card-provider" maxlength="60" placeholder="Ex.: Visa, Mastercard, banco" /></div>
             <div class="form-group"><label class="form-label" for="card-titular">Titular / responsável (opcional)</label><input class="form-input" id="card-titular" maxlength="80" placeholder="Ex.: Maria" /></div>
             <div class="form-group"><label class="form-label" for="card-credit-limit">Limite do cartão (opcional)</label><div class="amount-input-wrap"><span class="currency">R$</span><input class="form-input" id="card-credit-limit" inputmode="decimal" placeholder="0,00" /></div></div>
             <button class="secondary-btn" type="submit" id="save-credit-card">Cadastrar cartão</button>
@@ -1377,7 +1403,7 @@
           <div class="form-group">
             <label class="form-label" for="statement-csv">1. Selecione o arquivo CSV, PDF ou OFX</label>
             <input class="form-input" id="statement-csv" type="file" accept=".csv,.pdf,.ofx,text/csv,application/pdf,application/x-ofx" required />
-            <span class="helper">O vencimento pode ser sugerido pelo nome do arquivo, por exemplo Fatura_2026-11-07.ofx. O arquivo é processado neste dispositivo. PDFs digitalizados como imagem não são compatíveis.</span>
+            <span class="helper">O vencimento já vem sugerido (última fatura + 1 mês) e também pode ser lido do nome do arquivo, por exemplo Fatura_2026-11-07.ofx. O arquivo é processado neste dispositivo. PDFs digitalizados como imagem não são compatíveis.</span>
           </div>
           <div class="form-group">
             <label class="form-label" for="statement-due-date">2. Confira o vencimento da fatura</label>
@@ -1479,6 +1505,7 @@
       <div class="form-group" id="entry-credit-card-wrap" hidden>
         <label class="form-label" for="entry-credit-card">Cartão</label>
         <select class="form-input" id="entry-credit-card"><option value="">Selecione o cartão</option></select>
+        <button class="link-button" type="button" id="entry-add-card">Cadastrar novo cartão</button>
       </div>
       <div class="form-group" id="group-card-tip" style="display:none">
         <div class="info-box"><strong>Compra no crédito:</strong> categorize cada compra uma vez. O pagamento da fatura é marcado em Cartões e faturas e não entra como nova despesa.</div>
@@ -1528,6 +1555,37 @@
         <button class="primary-btn" type="submit" id="control-item-save">Salvar</button>
       </div>
       <p class="helper" id="control-item-dialog-message" role="status" aria-live="polite"></p>
+    </form>
+  </dialog>
+
+  <dialog class="item-dialog" id="card-form-dialog" aria-labelledby="card-form-dialog-title">
+    <form class="item-dialog-card" id="card-form-dialog-form" novalidate>
+      <header class="item-dialog-header">
+        <h2 id="card-form-dialog-title">Novo cartão</h2>
+        <button class="item-dialog-close" type="button" id="card-form-dialog-close" aria-label="Fechar">×</button>
+      </header>
+      <div class="form-group">
+        <label class="form-label" for="card-form-label">Nome do cartão</label>
+        <input class="form-input" id="card-form-label" maxlength="80" placeholder="Ex.: Cartão da Maria" required autocomplete="off" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="card-form-limit">Limite (opcional)</label>
+        <div class="amount-input-wrap">
+          <span class="currency">R$</span>
+          <input class="form-input" id="card-form-limit" inputmode="decimal" placeholder="0,00" />
+        </div>
+      </div>
+      <details class="card-form-extra">
+        <summary>Operadora ou banco (opcional)</summary>
+        <div class="form-group">
+          <input class="form-input" id="card-form-provider" maxlength="60" placeholder="Ex.: Visa, Mastercard, Nubank" autocomplete="off" aria-label="Operadora ou banco" />
+        </div>
+      </details>
+      <div class="item-dialog-actions">
+        <button class="secondary-btn" type="button" id="card-form-save">Só salvar</button>
+        <button class="primary-btn" type="submit" id="card-form-save-import">Salvar e importar fatura</button>
+      </div>
+      <p class="helper" id="card-form-dialog-message" role="status" aria-live="polite"></p>
     </form>
   </dialog>
 

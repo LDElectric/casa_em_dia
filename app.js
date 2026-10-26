@@ -47,6 +47,7 @@ const state = {
   transactionsMonthKey: null,
   pendingCardImport: null,
   selectedImportCardId: null,
+  pendingEntryCardId: null,
   pendingPdfLibrary: null,
   pendingHouseholdImport: null,
   editingFinanceCategoryId: null,
@@ -154,6 +155,19 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('reserve-movement-form').addEventListener('submit', saveReserveMovement);
     document.getElementById('credit-card-form').addEventListener('submit', saveCreditCard);
     document.getElementById('cancel-credit-card-edit').addEventListener('click', resetCreditCardForm);
+    document.getElementById('open-card-form').addEventListener('click', () => openCardFormDialog('cards'));
+    document.getElementById('entry-add-card').addEventListener('click', () => openCardFormDialog('entry'));
+    const cardFormDialog = document.getElementById('card-form-dialog');
+    document.getElementById('card-form-dialog-form').addEventListener('submit', event => {
+      event.preventDefault();
+      saveCardFromDialog('import');
+    });
+    document.getElementById('card-form-save').addEventListener('click', () => saveCardFromDialog('save'));
+    document.getElementById('card-form-dialog-close').addEventListener('click', closeCardFormDialog);
+    cardFormDialog.addEventListener('click', event => {
+      if (event.target === cardFormDialog) closeCardFormDialog();
+    });
+    cardFormDialog.addEventListener('close', () => document.body.classList.remove('dialog-open'));
     const scopeField = document.getElementById('card-statement-scope');
     if (scopeField) scopeField.addEventListener('change', updateCardScopeFields);
     document.getElementById('card-import-form').addEventListener('submit', prepareCardImport);
@@ -1516,6 +1530,12 @@ if (!config?.url || !config?.publishableKey) {
     cardSelect.value = state.creditCards.some(card => card.id === selected && card.active)
       ? selected
       : '';
+    if (state.pendingEntryCardId) {
+      if (state.creditCards.some(card => card.id === state.pendingEntryCardId && card.active)) {
+        cardSelect.value = state.pendingEntryCardId;
+      }
+      state.pendingEntryCardId = null;
+    }
   }
 
   function renderFinanceCategories() {
@@ -1971,15 +1991,132 @@ if (!config?.url || !config?.publishableKey) {
     })[group] ?? 'Sem grupo de orçamento';
   }
 
+  function cardProviderPrefix(card) {
+    return card.provider && normalizeControlName(card.provider) !== normalizeControlName(card.label)
+      ? `${card.provider} · `
+      : '';
+  }
+
+  async function createCreditCard({ label, provider, limitCents }) {
+    const { data, error } = await supabase.from('credit_cards')
+      .insert({
+        household_id: state.membership.household_id,
+        label,
+        provider: provider || label,
+        titular_name: label,
+        cardholder_name: label,
+        card_role: 'titular',
+        statement_scope: 'individual',
+        last_four: null,
+        credit_limit_cents: limitCents,
+        created_by: state.user.id
+      })
+      .select('id')
+      .single();
+    return { id: data?.id ?? null, error };
+  }
+
+  function suggestedStatementDueDate(card) {
+    const latest = state.cardStatements
+      .filter(statement => statement.credit_card_id === card?.id)
+      .sort((left, right) => right.due_date.localeCompare(left.due_date))[0];
+    const [year, month, day] = (latest?.due_date ?? localDate(new Date())).split('-').map(Number);
+    const next = new Date(year, month - 1, 1);
+    next.setMonth(next.getMonth() + 1);
+    const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+    next.setDate(Math.min(day, lastDay));
+    return localDate(next);
+  }
+
+  let cardFormOrigin = 'cards';
+
+  function openCardFormDialog(origin = 'cards') {
+    cardFormOrigin = origin;
+    const fromEntry = origin === 'entry';
+    document.getElementById('card-form-dialog-form').reset();
+    const saveButton = document.getElementById('card-form-save');
+    const importButton = document.getElementById('card-form-save-import');
+    importButton.hidden = fromEntry;
+    saveButton.className = fromEntry ? 'primary-btn' : 'secondary-btn';
+    saveButton.disabled = false;
+    importButton.disabled = false;
+    setMessage('card-form-dialog-message', fromEntry
+      ? 'Só o nome é obrigatório. O cartão já fica selecionado nesta despesa.'
+      : 'Só o nome é obrigatório. O limite ajuda a acompanhar o uso do cartão.');
+    const dialog = document.getElementById('card-form-dialog');
+    document.body.classList.add('dialog-open');
+    if (typeof dialog.showModal === 'function') {
+      dialog.showModal();
+    } else {
+      dialog.setAttribute('open', '');
+    }
+    window.setTimeout(() => document.getElementById('card-form-label').focus({ preventScroll: true }), 120);
+  }
+
+  function closeCardFormDialog() {
+    const dialog = document.getElementById('card-form-dialog');
+    document.body.classList.remove('dialog-open');
+    if (!dialog) return;
+    if (typeof dialog.close === 'function' && dialog.open) {
+      dialog.close();
+    } else {
+      dialog.removeAttribute('open');
+    }
+    if (cardFormOrigin === 'entry') {
+      const select = document.getElementById('entry-credit-card');
+      if (select) select.focus({ preventScroll: true });
+    }
+  }
+
+  async function saveCardFromDialog(mode) {
+    const label = document.getElementById('card-form-label').value.trim();
+    const limitRaw = document.getElementById('card-form-limit').value.trim();
+    const limitCents = limitRaw ? parseAmount(limitRaw) : null;
+    const provider = document.getElementById('card-form-provider').value.trim();
+    if (!label || label.length > 80
+      || (limitRaw && (!Number.isSafeInteger(limitCents) || limitCents <= 0))) {
+      setMessage('card-form-dialog-message', 'Informe o nome do cartão e, se quiser, um limite válido.');
+      return;
+    }
+    const saveButton = document.getElementById('card-form-save');
+    const importButton = document.getElementById('card-form-save-import');
+    saveButton.disabled = true;
+    importButton.disabled = true;
+    setMessage('card-form-dialog-message', 'Salvando cartão...');
+    try {
+      const { id, error } = await createCreditCard({ label, provider, limitCents });
+      if (error || !id) throw error ?? new Error('card not created');
+      if (cardFormOrigin === 'entry') state.pendingEntryCardId = id;
+      closeCardFormDialog();
+      await loadHouseholdData();
+      if (mode === 'import') {
+        showToast('Cartão cadastrado. Escolha o arquivo da fatura.');
+        openCardImport(id);
+      } else {
+        showToast(cardFormOrigin === 'entry'
+          ? 'Cartão cadastrado e selecionado nesta despesa.'
+          : 'Cartão cadastrado.');
+      }
+    } catch (error) {
+      console.error('Could not create credit card:', error?.message ?? error);
+      setMessage('card-form-dialog-message', error?.code === '23505'
+        ? 'Já existe um cartão com esse nome. Use outro nome para diferenciar.'
+        : 'Não foi possível cadastrar o cartão. Tente novamente.');
+    } finally {
+      saveButton.disabled = false;
+      importButton.disabled = false;
+    }
+  }
+
   async function saveCreditCard(event) {
     event.preventDefault();
     const label = document.getElementById('card-label').value.trim();
-    const provider = document.getElementById('card-provider').value.trim();
+    const provider = document.getElementById('card-provider').value.trim() || label;
     const titularName = document.getElementById('card-titular').value.trim() || label;
     const limitValue = document.getElementById('card-credit-limit').value.trim();
     const limit = limitValue ? parseAmount(limitValue) : null;
-    if (!label || !provider || (limitValue && (!Number.isSafeInteger(limit) || limit <= 0))) {
-      setMessage('credit-card-message', 'Informe nome e operadora do cartão e, se quiser, o limite do cartão.');
+    if (!label || (limitValue && (!Number.isSafeInteger(limit) || limit <= 0))) {
+      setMessage('credit-card-message', 'Informe o nome do cartão e, se quiser, o limite e a operadora.');
       return;
     }
 
@@ -2055,6 +2192,7 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('card-import-form').reset();
     document.getElementById('card-import-message').textContent = '';
     document.getElementById('confirm-card-import').disabled = true;
+    document.getElementById('statement-due-date').value = suggestedStatementDueDate(card);
     window.setTimeout(() => document.getElementById('statement-csv').focus({ preventScroll: true }), 200);
   }
 
@@ -2085,7 +2223,7 @@ if (!config?.url || !config?.publishableKey) {
       const limit = card.credit_limit_cents
         ? ` · limite ${formatMoney(Number(card.credit_limit_cents))}`
         : '';
-      subtitle.textContent = `${card.provider} · ${ownership}${limit}`;
+      subtitle.textContent = `${cardProviderPrefix(card)}${ownership}${limit}`;
       info.append(title, subtitle);
       const actions = document.createElement('div');
       actions.style.display = 'flex';
@@ -3435,7 +3573,12 @@ if (!config?.url || !config?.publishableKey) {
     ];
     let cardTotal = 0;
     if (!cardsToShow.length) {
-      appendEmptyState(cardList, 'Cadastre um cartão em Fixos para importar uma fatura.');
+      const cta = document.createElement('button');
+      cta.type = 'button';
+      cta.className = 'primary-btn card-list-cta';
+      cta.textContent = 'Cadastrar meu primeiro cartão';
+      cta.addEventListener('click', () => openCardFormDialog('cards'));
+      cardList.append(cta);
     }
     for (const card of cardsToShow) {
       const cardStatements = statements.filter(statement => statement.credit_card_id === card.id);
@@ -3467,7 +3610,10 @@ if (!config?.url || !config?.publishableKey) {
       title.textContent = card.label;
       const subtitle = document.createElement('div');
       subtitle.className = 'subtitle';
-      subtitle.textContent = `${card.provider} · ${card.titular_name || 'Cartão cadastrado'}`;
+      subtitle.textContent = `${cardProviderPrefix(card)}${card.titular_name || 'Cartão cadastrado'}`;
+      if (card.credit_limit_cents) {
+        subtitle.textContent += ` · limite ${formatMoney(Number(card.credit_limit_cents))}`;
+      }
       details.append(title, subtitle);
       identity.append(icon, details);
       info.append(identity);

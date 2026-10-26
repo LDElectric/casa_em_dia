@@ -39,6 +39,17 @@ Em **Ajustes → Backup e uso local** é possível baixar:
 
 Os CSV usam `;` como separador, vírgula decimal e BOM UTF-8 para abrir direto no Excel em português. Os arquivos são gerados no navegador a partir dos dados do Supabase; nada é enviado a terceiros.
 
+## Cartões de crédito em poucos toques
+
+O caminho curto para começar a usar cartão fica na própria tela **Mês**:
+
+1. em **Faturas de cartão**, toque em **＋ Novo cartão** (esse botão também aparece no estado vazio como *Cadastrar meu primeiro cartão*);
+2. preencha **apenas o nome** — limite é opcional e operadora/banco fica em *detalhes opcionais*;
+3. toque em **Salvar e importar fatura**: o cartão é criado e o importador abre já com ele selecionado e o **vencimento sugerido** (última fatura + 1 mês, ou a data do nome do arquivo);
+4. escolha o arquivo → **Analisar fatura** → confira → **Salvar fatura**.
+
+São 4 toques no caminho feliz, contra 8 a 10 do fluxo anterior (que exigia ir a **Fixos**, preencher nome e operadora e depois voltar para importar). Quando a despesa é no cartão e nenhum cartão está cadastrado, a própria ficha de lançamento mostra **Cadastrar novo cartão**; o cartão criado já sai selecionado na despesa, sem perder o que foi digitado. O formulário completo (titular, limite, edição) continua em **Fixos → Cartões e faturas**, e a operadora passou a ser opcional nos dois caminhos.
+
 ## Duplicidade de lançamentos
 
 O app evita duplicar de duas formas:
