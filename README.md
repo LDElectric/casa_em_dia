@@ -57,6 +57,17 @@ A aba **Receitas** (também acessível por *Ver e gerenciar todas as receitas*, 
 - **Receitas deste mês** — o que de fato entrou no mês selecionado, com **Ajustar** (valor, tipo, grupo e **Repetir até**), **Remover deste mês** (sai só deste mês) e **Encerrar repetição**. Se alguma receita foi removida do mês, o botão **Restaurar receitas removidas** reaparece;
 - **Encerradas** — grupo recolhível com as séries que terminaram, para não poluir a lista e ainda dar contexto ("por que outubro não tem esse valor?").
 
+## Caixinhas (guardar para contas anuais)
+
+Em **Receitas → Caixinhas** você cria uma caixinha por conta que vence de vez em quando (IPVA, IPTU, CREA, CRT, licenciamento, seguro…):
+
+- informe **quanto vai para a caixinha todo mês**, opcionalmente o **valor da conta** e o **mês do vencimento** (o app mostra progresso, quanto falta e quantos meses restam) e, se quiser, **guardar até** um mês;
+- o **aporte do mês é registrado automaticamente** ao abrir o mês (`ensure_savings_pot_movements`), espelhando o agendamento que o banco já faz — reabrir o mês não duplica (índice único por caixinha/mês);
+- **Guardar agora** registra um aporte extra; **Pagar conta** registra a **despesa** no mês e **retira** o valor da caixinha na mesma ação;
+- **Encerrar aportes** para a contribuição a partir do próximo mês (o valor guardado permanece para pagar a conta) e **Voltar a guardar** reabre; **Excluir caixinha** só para erro/duplicado.
+
+Efeito nos números: o aporte **sai da receita** (entra como dedução do livre no resumo do mês, no saldo dos Insights e na previsão dos próximos meses), mas **não é despesa**. Quando a conta é paga, a despesa entra de verdade e a caixinha diminui — nada é contado duas vezes. A reserva de emergência continua separada em **Ajustes**.
+
 ### Série com prazo (o modelo que os apps comerciais usam)
 
 Toda receita/despesa recorrente é uma **série com início e fim opcional**:

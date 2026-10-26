@@ -1296,6 +1296,32 @@
         </div>
 
         <div class="section">
+          <div class="section-title">Caixinhas · guardar para contas anuais</div>
+          <div class="list" id="pot-list"></div>
+          <p class="helper" id="pot-total">Nenhum valor guardado ainda</p>
+          <p class="helper">O aporte da caixinha <strong>sai da receita</strong> (reduz o livre do mês), mas não é despesa. Quando a conta vencer, use <strong>Pagar conta</strong>: a despesa entra no mês e o valor sai da caixinha — sem contar duas vezes. Aportes até <span id="pot-month-label">este mês</span>.</p>
+          <form class="quick-add-card" id="pot-form">
+            <div class="quick-add-row">
+              <input class="form-input" name="pot_name" maxlength="80" placeholder="Ex.: IPVA, IPTU, CREA" aria-label="Nome da caixinha" required />
+              <input class="form-input" name="pot_monthly" inputmode="decimal" placeholder="Por mês" aria-label="Valor guardado por mês" required />
+            </div>
+            <div class="quick-add-row">
+              <input class="form-input" name="pot_target" inputmode="decimal" placeholder="Valor da conta (opcional)" aria-label="Valor da conta anual" />
+              <select class="form-input" name="pot_due" aria-label="Mês do vencimento">
+                <option value="">Vence em…</option>
+                <option value="1">janeiro</option><option value="2">fevereiro</option><option value="3">março</option>
+                <option value="4">abril</option><option value="5">maio</option><option value="6">junho</option>
+                <option value="7">julho</option><option value="8">agosto</option><option value="9">setembro</option>
+                <option value="10">outubro</option><option value="11">novembro</option><option value="12">dezembro</option>
+              </select>
+            </div>
+            <label class="control-repeat-option">Guardar até (opcional) <input class="form-input" name="pot_until" type="month" aria-label="Guardar até qual mês" /></label>
+            <button class="primary-btn" type="submit">Criar caixinha</button>
+            <p class="helper" id="pot-message" role="status" aria-live="polite"></p>
+          </form>
+        </div>
+
+        <div class="section">
           <div class="section-title">Adicionar receita</div>
           <form class="quick-add-card" id="income-add-form" data-control-group="income">
             <div class="quick-add-row">

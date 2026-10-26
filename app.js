@@ -45,6 +45,8 @@ const state = {
   cardStatements: [],
   cardStatementItems: [],
   cardMerchantRules: [],
+  savingsPots: [],
+  savingsPotMovements: [],
   monthlyControlItems: [],
   controlMonthKey: null,
   transactionsMonthKey: null,
@@ -223,6 +225,7 @@ if (!config?.url || !config?.publishableKey) {
     document.getElementById('control-item-form').addEventListener('submit', saveControlItemAdjustment);
     document.getElementById('control-item-end-series').addEventListener('click', endControlItemSeries);
     document.getElementById('control-item-delete-all').addEventListener('click', deleteControlItemEverywhere);
+    document.getElementById('pot-form').addEventListener('submit', saveSavingsPot);
     document.getElementById('control-item-delete').addEventListener('click', deleteControlItemFromDialog);
     document.querySelectorAll('#control-item-dialog [data-close-dialog]').forEach(button =>
       button.addEventListener('click', closeControlItemDialog));
@@ -705,8 +708,11 @@ if (!config?.url || !config?.publishableKey) {
       statementsResult,
       statementItemsResult,
       merchantRulesResult,
+      potsResult,
+      potMovementsResult,
       monthlyControlResult,
-      ensureResult
+      ensureResult,
+      ensurePotsResult
     ] = await Promise.all([
       supabase.from('household_members')
         .select('user_id, email, role')
@@ -788,8 +794,19 @@ if (!config?.url || !config?.publishableKey) {
         .select('id, merchant_key, merchant_label, category, subcategory, budget_group')
         .eq('household_id', householdId)
         .order('merchant_key'),
+      supabase.from('savings_pots')
+        .select('id, name, monthly_cents, target_cents, due_month, category, subcategory, budget_group, starts_month, ends_month, active')
+        .eq('household_id', householdId)
+        .order('created_at'),
+      supabase.from('savings_pot_movements')
+        .select('id, pot_id, direction, source, amount_cents, movement_date, month_start, description')
+        .eq('household_id', householdId)
+        .order('movement_date', { ascending: false }),
       queryMonthlyControlItems(householdId),
       supabase.rpc('ensure_monthly_control_items', {
+        target_month_start: state.controlMonthKey
+      }),
+      supabase.rpc('ensure_savings_pot_movements', {
         target_month_start: state.controlMonthKey
       })
     ]);
@@ -817,6 +834,16 @@ if (!config?.url || !config?.publishableKey) {
     // apenas com as regras embutidas, sem derrubar o carregamento da casa.
     if (merchantRulesResult.error) {
       console.warn('Could not load household merchant rules:', merchantRulesResult.error.message);
+    }
+    // Caixinhas são opcionais: sem a migração, o app segue sem essa seção.
+    if (potsResult.error) {
+      console.warn('Could not load savings pots:', potsResult.error.message);
+    }
+    if (potMovementsResult.error) {
+      console.warn('Could not load savings pot movements:', potMovementsResult.error.message);
+    }
+    if (ensurePotsResult.error) {
+      console.warn('Could not prepare savings pot contributions:', ensurePotsResult.error.message);
     }
 
     let financeCategories = categoriesResult.data;
@@ -862,6 +889,18 @@ if (!config?.url || !config?.publishableKey) {
     state.cardStatements = statementsResult.data;
     state.cardStatementItems = statementItemsResult.data;
     state.cardMerchantRules = merchantRulesResult.error ? [] : (merchantRulesResult.data ?? []);
+    const potsInserted = Number(ensurePotsResult.error ? 0 : ensurePotsResult.data ?? 0);
+    if (potsInserted > 0) {
+      const { data: movements } = await supabase.from('savings_pot_movements')
+        .select('id, pot_id, direction, source, amount_cents, movement_date, month_start, description')
+        .eq('household_id', householdId)
+        .order('movement_date', { ascending: false });
+      state.savingsPots = potsResult.error ? [] : (potsResult.data ?? []);
+      state.savingsPotMovements = movements ?? [];
+    } else {
+      state.savingsPots = potsResult.error ? [] : (potsResult.data ?? []);
+      state.savingsPotMovements = potMovementsResult.error ? [] : (potMovementsResult.data ?? []);
+    }
     state.monthlyControlItems = monthlyControlResult.data;
     state.householdCutoffDay = Number(householdResult.data.finance_month_cutoff_day) || 1;
     if (ensureResult.error) {
@@ -4296,9 +4335,12 @@ if (!config?.url || !config?.publishableKey) {
       state.cardStatementItems,
       monthKey
     );
+    // O que vai para as caixinhas sai do livre, mas não é despesa de consumo.
+    const potContribution = potContributionsForMonth(monthKey);
+    const freeBalance = summary.income - summary.expenses - potContribution;
     document.getElementById('month-income').textContent = formatMoney(summary.income);
     document.getElementById('month-expenses').textContent = formatMoney(summary.expenses);
-    document.getElementById('month-balance').textContent = formatMoney(summary.income - summary.expenses);
+    document.getElementById('month-balance').textContent = formatMoney(freeBalance);
 
     const incomeDetail = document.getElementById('month-income-detail');
     if (incomeDetail) {
@@ -4318,11 +4360,12 @@ if (!config?.url || !config?.publishableKey) {
     }
     const balanceDetail = document.getElementById('month-balance-detail');
     if (balanceDetail) {
-      balanceDetail.textContent = summary.income - summary.expenses >= 0
-        ? 'Sobra prevista no mês'
-        : 'Falta prevista no mês';
+      const potNote = potContribution > 0
+        ? ` · ${formatMoney(potContribution).replace(/ /g, '\u00A0')} em caixinhas`
+        : '';
+      balanceDetail.textContent = (freeBalance >= 0 ? 'Sobra prevista no mês' : 'Falta prevista no mês') + potNote;
     }
-    return summary;
+    return { ...summary, potContribution, freeBalance };
   }
 
   function renderUpcomingStatementBanner(currentMonthKey) {
@@ -4486,7 +4529,8 @@ if (!config?.url || !config?.publishableKey) {
       const summary = calculateMonthlyCashFlow(entries, state.cardStatements, state.cardStatementItems, mKey);
       const monthDate = new Date(`${mKey}-01T12:00:00`);
       const monthName = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(monthDate);
-      const balance = summary.income - summary.expenses;
+      const potContribution = potContributionsForMonth(mKey);
+      const balance = summary.income - summary.expenses - potContribution;
 
       const card = document.createElement('div');
       card.className = 'forecast-month-card';
@@ -5185,6 +5229,367 @@ if (!config?.url || !config?.publishableKey) {
     await loadHouseholdData();
   }
 
+  /* ===== Caixinhas: guardar por mês para contas anuais ===== */
+
+  function potBalance(potId) {
+    return state.savingsPotMovements
+      .filter(movement => movement.pot_id === potId)
+      .reduce((balance, movement) =>
+        balance + (movement.direction === 'deposit' ? 1 : -1) * Number(movement.amount_cents), 0);
+  }
+
+  function potContributionsForMonth(monthKey) {
+    const monthStart = `${String(monthKey ?? '').slice(0, 7)}-01`;
+    return state.savingsPotMovements
+      .filter(movement => movement.direction === 'deposit' && movement.month_start === monthStart)
+      .reduce((sum, movement) => sum + Number(movement.amount_cents), 0);
+  }
+
+  function potHasContributionInMonth(potId, monthKey) {
+    const monthStart = `${String(monthKey ?? '').slice(0, 7)}-01`;
+    return state.savingsPotMovements.some(movement =>
+      movement.pot_id === potId
+      && movement.direction === 'deposit'
+      && movement.source !== 'manual'
+      && movement.month_start === monthStart);
+  }
+
+  function potStatusLabel(pot) {
+    const current = recurringCutoffMonthStart();
+    if (pot.ends_month) {
+      if (pot.ends_month < current) return `Encerrada em ${formatMonthKey(pot.ends_month)}`;
+      if (pot.ends_month === current) return `Último aporte: ${formatMonthKey(pot.ends_month)}`;
+      return `Aportes até ${formatMonthKey(pot.ends_month)}`;
+    }
+    if (!pot.active) return 'Aportes parados';
+    return 'Aportes mensais';
+  }
+
+  function potMonthsLeft(pot) {
+    if (!pot.due_month) return null;
+    const today = new Date();
+    let months = pot.due_month - (today.getMonth() + 1);
+    if (months <= 0) months += 12;
+    return months;
+  }
+
+  function renderSavingsPots(monthKey) {
+    const container = document.getElementById('pot-list');
+    if (!container) return;
+    const summaryElement = document.getElementById('pot-total');
+    const monthLabel = document.getElementById('pot-month-label');
+    if (monthLabel) monthLabel.textContent = formatMonthKey(monthKey);
+    const pots = [...state.savingsPots].sort((left, right) =>
+      Number(Boolean(left.ends_month)) - Number(Boolean(right.ends_month))
+      || left.name.localeCompare(right.name, 'pt-BR'));
+    container.replaceChildren();
+    const totalSaved = state.savingsPots.reduce((sum, pot) => sum + potBalance(pot.id), 0);
+    const monthContribution = potContributionsForMonth(monthKey);
+    if (summaryElement) {
+      summaryElement.textContent = totalSaved
+        ? `Guardado ${formatMoney(totalSaved)} · neste mês ${formatMoney(monthContribution)}`
+        : 'Nenhum valor guardado ainda';
+    }
+    if (!pots.length) {
+      appendEmptyState(container, 'Nenhuma caixinha ainda. Crie abaixo a primeira (ex.: IPVA, IPTU, CREA).');
+      return;
+    }
+    for (const pot of pots) {
+      const saved = potBalance(pot.id);
+      const target = Number(pot.target_cents ?? 0);
+      const progress = target > 0 ? Math.min(100, Math.round(saved / target * 100)) : 0;
+      const contributed = potHasContributionInMonth(pot.id, monthKey);
+      const ended = Boolean(pot.ends_month) && pot.ends_month < recurringCutoffMonthStart();
+
+      const row = document.createElement('div');
+      row.className = 'list-item income-row';
+      const info = document.createElement('div');
+      info.className = 'info';
+      const title = document.createElement('div');
+      title.className = 'title';
+      title.textContent = pot.name;
+      const tags = document.createElement('div');
+      tags.className = 'control-row-tags';
+      const monthlyTag = document.createElement('span');
+      monthlyTag.className = 'recurring-tag';
+      monthlyTag.textContent = `${formatMoney(Number(pot.monthly_cents))}/mês`;
+      tags.append(monthlyTag);
+      const statusTag = document.createElement('span');
+      statusTag.className = 'recurring-tag paused';
+      statusTag.textContent = potStatusLabel(pot);
+      tags.append(statusTag);
+      if (pot.due_month) {
+        const dueTag = document.createElement('span');
+        dueTag.className = 'recurring-tag';
+        dueTag.textContent = `vence em ${monthName(Number(pot.due_month))}`;
+        tags.append(dueTag);
+      }
+      const subtitle = document.createElement('div');
+      subtitle.className = 'subtitle';
+      subtitle.textContent = target > 0
+        ? `${formatMoney(saved)} de ${formatMoney(target)} (${progress}%)${pot.due_month ? ` · faltam ${potMonthsLeft(pot)} ${potMonthsLeft(pot) === 1 ? 'mês' : 'meses'}` : ''}`
+        : `${formatMoney(saved)} guardados`;
+      info.append(title, tags, subtitle);
+      if (target > 0) {
+        const bar = document.createElement('div');
+        bar.className = 'progress-bar';
+        const fill = document.createElement('div');
+        fill.className = 'progress-fill';
+        fill.style.width = `${Math.max(2, progress)}%`;
+        fill.style.background = progress >= 100 ? 'var(--green)' : 'var(--accent)';
+        bar.append(fill);
+        info.append(bar);
+      }
+      if (contributed) {
+        const done = document.createElement('span');
+        done.className = 'control-previous-amount';
+        done.textContent = 'Aporte deste mês já registrado';
+        info.append(done);
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'income-row-actions';
+      const deposit = document.createElement('button');
+      deposit.type = 'button';
+      deposit.textContent = contributed ? 'Guardar extra' : 'Guardar agora';
+      deposit.addEventListener('click', () => depositToPot(pot));
+      actions.append(deposit);
+      const pay = document.createElement('button');
+      pay.type = 'button';
+      pay.textContent = 'Pagar conta';
+      pay.addEventListener('click', () => payFromPot(pot));
+      actions.append(pay);
+      if (ended || !pot.active) {
+        const reopen = document.createElement('button');
+        reopen.type = 'button';
+        reopen.textContent = 'Voltar a guardar';
+        reopen.addEventListener('click', () => reopenPot(pot));
+        actions.append(reopen);
+      } else {
+        const end = document.createElement('button');
+        end.type = 'button';
+        end.textContent = 'Encerrar aportes';
+        end.addEventListener('click', () => endPot(pot));
+        actions.append(end);
+      }
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'danger';
+      remove.textContent = 'Excluir caixinha';
+      remove.addEventListener('click', () => deletePot(pot));
+      actions.append(remove);
+      info.append(actions);
+
+      const value = document.createElement('div');
+      value.className = 'income-row-value';
+      value.textContent = formatMoney(saved);
+      row.append(info, value);
+      container.append(row);
+    }
+  }
+
+  async function upsertPot(payload) {
+    const { error } = await supabase.from('savings_pots')
+      .upsert(payload, { onConflict: 'id' });
+    return error ?? null;
+  }
+
+  async function saveSavingsPot(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const name = form.elements.pot_name.value.trim();
+    const monthlyCents = parseAmount(form.elements.pot_monthly.value);
+    const targetRaw = form.elements.pot_target.value.trim();
+    const targetCents = targetRaw ? parseAmount(targetRaw) : null;
+    const dueMonthRaw = form.elements.pot_due.value;
+    const untilRaw = String(form.elements.pot_until?.value ?? '').trim();
+    const endsMonth = untilRaw ? monthStartFromKey(untilRaw) : null;
+    if (!name || !Number.isSafeInteger(monthlyCents) || monthlyCents <= 0) {
+      setMessage('pot-message', 'Informe o nome e o valor que vai para a caixinha todo mês.');
+      return;
+    }
+    if (targetRaw && (!Number.isSafeInteger(targetCents) || targetCents <= 0)) {
+      setMessage('pot-message', 'Informe um valor de conta válido (ou deixe em branco).');
+      return;
+    }
+    if (endsMonth && endsMonth < state.controlMonthKey) {
+      setMessage('pot-message', 'O término dos aportes precisa ser igual ou posterior ao mês atual.');
+      return;
+    }
+    const budgetGroup = 'fixed';
+    const { category, subcategory } = categoryForControlItem('expense', budgetGroup, name);
+    const { error } = await supabase.from('savings_pots').insert({
+      household_id: state.membership.household_id,
+      name,
+      monthly_cents: monthlyCents,
+      target_cents: targetCents || null,
+      due_month: dueMonthRaw ? Number(dueMonthRaw) : null,
+      category,
+      subcategory,
+      budget_group: budgetGroup,
+      starts_month: state.controlMonthKey,
+      ends_month: endsMonth,
+      active: true,
+      created_by: state.user.id
+    });
+    if (error) {
+      console.error('Could not create savings pot:', error.message);
+      setMessage('pot-message', 'Não foi possível criar a caixinha. Confira se a migração foi aplicada.');
+      return;
+    }
+    form.reset();
+    const inserted = await supabase.rpc('ensure_savings_pot_movements', {
+      target_month_start: state.controlMonthKey
+    });
+    if (inserted.error) console.warn('Could not post the first contribution:', inserted.error.message);
+    setMessage('pot-message', `Caixinha "${name}" criada. O aporte deste mês já foi registrado.`);
+    showToast(`Caixinha "${name}" criada.`);
+    await loadHouseholdData();
+  }
+
+  async function depositToPot(pot) {
+    const suggestion = (Number(pot.monthly_cents) / 100).toFixed(2).replace('.', ',');
+    const raw = window.prompt(`Quanto guardar em "${pot.name}" agora?`, suggestion);
+    if (raw == null) return;
+    const amount = parseAmount(raw);
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+      showToast('Informe um valor maior que zero.');
+      return;
+    }
+    const { error } = await supabase.from('savings_pot_movements').insert({
+      household_id: state.membership.household_id,
+      pot_id: pot.id,
+      direction: 'deposit',
+      source: 'manual',
+      amount_cents: amount,
+      movement_date: localDate(new Date()),
+      month_start: state.controlMonthKey,
+      description: 'Aporte manual',
+      created_by: state.user.id
+    });
+    if (error) {
+      console.error('Could not deposit into savings pot:', error.message);
+      showToast('Não foi possível guardar o valor.');
+      return;
+    }
+    showToast(`${formatMoney(amount)} guardados em ${pot.name}.`);
+    await loadHouseholdData();
+  }
+
+  async function payFromPot(pot) {
+    const saved = potBalance(pot.id);
+    const target = Number(pot.target_cents ?? 0);
+    const suggested = Math.max(0, target > 0 ? Math.min(target, saved || target) : saved);
+    if (saved <= 0 && target <= 0) {
+      showToast('Esta caixinha ainda não tem valor guardado.');
+      return;
+    }
+    const raw = window.prompt(
+      `Pagar "${pot.name}" usando a caixinha. Valor da conta:`,
+      ((suggested || target) / 100).toFixed(2).replace('.', ',')
+    );
+    if (raw == null) return;
+    const amount = parseAmount(raw);
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+      showToast('Informe um valor maior que zero.');
+      return;
+    }
+    const withdraw = Math.min(amount, Math.max(0, saved));
+    const { error: expenseError } = await supabase.from('transactions').insert({
+      household_id: state.membership.household_id,
+      created_by: state.user.id,
+      title: pot.name,
+      transaction_type: 'expense',
+      category: categoryForControlItem('expense', pot.budget_group ?? 'fixed', pot.name).category,
+      subcategory: pot.subcategory ?? null,
+      budget_group: pot.budget_group ?? 'fixed',
+      payment_method: 'transfer',
+      amount_cents: amount,
+      transaction_date: localDate(new Date()),
+      competence_month: state.controlMonthKey
+    });
+    if (expenseError) {
+      console.error('Could not register the annual expense:', expenseError.message);
+      showToast('Não foi possível registrar a despesa desta conta.');
+      return;
+    }
+    if (withdraw > 0) {
+      const { error: movementError } = await supabase.from('savings_pot_movements').insert({
+        household_id: state.membership.household_id,
+        pot_id: pot.id,
+        direction: 'withdrawal',
+        amount_cents: withdraw,
+        movement_date: localDate(new Date()),
+        description: 'Pagamento da conta',
+        created_by: state.user.id
+      });
+      if (movementError) {
+        console.warn('Could not withdraw from the savings pot:', movementError.message);
+      }
+    }
+    showToast(`"${pot.name}" paga: despesa de ${formatMoney(amount)} registrada e ${formatMoney(withdraw)} retirados da caixinha.`);
+    await loadHouseholdData();
+  }
+
+  async function endPot(pot) {
+    const stop = nextMonthStart(state.controlMonthKey);
+    const lastMonth = previousMonthStart(stop);
+    if (!window.confirm(
+      `Encerrar os aportes de "${pot.name}" a partir de ${formatMonthKey(stop)}? O valor já guardado continua na caixinha para pagar a conta.`
+    )) return;
+    const finished = lastMonth < recurringCutoffMonthStart();
+    const { error } = await supabase.from('savings_pots')
+      .update({ ends_month: lastMonth, active: !finished, updated_at: new Date().toISOString() })
+      .eq('id', pot.id)
+      .eq('household_id', state.membership.household_id);
+    if (error) {
+      console.error('Could not end savings pot:', error.message);
+      showToast('Não foi possível encerrar os aportes.');
+      return;
+    }
+    await supabase.from('savings_pot_movements')
+      .delete()
+      .eq('pot_id', pot.id)
+      .eq('direction', 'deposit')
+      .gte('month_start', stop)
+      .eq('household_id', state.membership.household_id);
+    showToast(`Aportes de "${pot.name}" encerrados a partir de ${formatMonthKey(stop)}.`);
+    await loadHouseholdData();
+  }
+
+  async function reopenPot(pot) {
+    if (!window.confirm(`Voltar a guardar em "${pot.name}" a partir deste mês?`)) return;
+    const { error } = await supabase.from('savings_pots')
+      .update({ ends_month: null, active: true, updated_at: new Date().toISOString() })
+      .eq('id', pot.id)
+      .eq('household_id', state.membership.household_id);
+    if (error) {
+      console.error('Could not reopen savings pot:', error.message);
+      showToast('Não foi possível reabrir os aportes.');
+      return;
+    }
+    await supabase.rpc('ensure_savings_pot_movements', { target_month_start: state.controlMonthKey });
+    showToast(`Aportes de "${pot.name}" reabertos.`);
+    await loadHouseholdData();
+  }
+
+  async function deletePot(pot) {
+    if (!window.confirm(
+      `Excluir a caixinha "${pot.name}"? Os aportes e o histórico dela também serão removidos. O que já foi pago como despesa continua no extrato.`
+    )) return;
+    const { error } = await supabase.from('savings_pots')
+      .delete()
+      .eq('id', pot.id)
+      .eq('household_id', state.membership.household_id);
+    if (error) {
+      console.error('Could not delete savings pot:', error.message);
+      showToast('Não foi possível excluir a caixinha.');
+      return;
+    }
+    showToast(`Caixinha "${pot.name}" excluída.`);
+    await loadHouseholdData();
+  }
+
   function renderFinancialData() {
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -5211,10 +5616,13 @@ if (!config?.url || !config?.publishableKey) {
     const spendingDays = new Set(insightsTransactions
       .filter(item => item.transaction_type === 'expense')
       .map(item => item.transaction_date)).size;
+    const insightPotContribution = potContributionsForMonth(selectedMonthKey);
     document.getElementById('insight-balance').textContent =
-      formatMoney(insightIncome - insightExpenses - insightReserveNet);
+      formatMoney(insightIncome - insightExpenses - insightReserveNet - insightPotContribution);
     document.getElementById('insight-balance-note').textContent =
-      insightsTransactions.length || insightReserveNet ? 'Receitas − consumo − aporte líquido à reserva' : 'Sem lançamentos';
+      insightsTransactions.length || insightReserveNet || insightPotContribution
+        ? 'Receitas − consumo − reserva − caixinhas'
+        : 'Sem lançamentos';
     document.getElementById('insight-saving-rate').textContent =
       `${insightIncome ? Math.round(((insightIncome - insightExpenses) / insightIncome) * 100) : 0}%`;
     document.getElementById('insight-saving-note').textContent =
@@ -5263,6 +5671,7 @@ if (!config?.url || !config?.publishableKey) {
     renderTransactions(document.getElementById('all-transactions'), recentEntries);
     updateCharts(insightsTransactions);
     renderIncomePanel();
+    renderSavingsPots(controlMonthKey);
   }
 
   function allCardStatementEntries() {
